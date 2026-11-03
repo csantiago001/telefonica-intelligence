@@ -3,7 +3,7 @@ import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
 import { now } from '../db/database.js';
-import { getAllSettings, setSetting, DEFAULT_SETTINGS } from '../lib/settings.js';
+import { getAllSettings, getSetting, setSetting, DEFAULT_SETTINGS } from '../lib/settings.js';
 import { HttpError, parse, audit, pageSchema, paginate, toCsv } from '../lib/util.js';
 import { requirePerm, can } from '../middleware/auth.js';
 import { runRetention } from '../jobs/retention.js';
@@ -153,8 +153,13 @@ export default function systemRoutes({ db, config, startedAt, version }) {
     res.json({ ok: true, ...publicSearchConfig(db) });
   });
   r.post('/settings/search/test', requirePerm('admin.settings'), async (req, res) => {
-    const cfg = getSearchConfig(db, config.masterKey);
-    if (!cfg) throw new HttpError(400, 'No hay un buscador configurado.');
+    const d = parse(z.object({ provider: z.enum(['brave', 'google']).optional(), braveKey: z.string().trim().optional(), googleKey: z.string().trim().optional(), googleCx: z.string().trim().optional() }), req.body);
+    // Prueba la clave escrita en el momento (si viene en la solicitud); si no, la ya guardada.
+    let cfg;
+    if (d.provider === 'brave' && d.braveKey) cfg = { provider: 'brave', key: d.braveKey };
+    else if (d.provider === 'google' && d.googleKey) cfg = { provider: 'google', key: d.googleKey, cx: d.googleCx || getSetting(db, 'search.google_cx') || '' };
+    else cfg = getSearchConfig(db, config.masterKey);
+    if (!cfg) throw new HttpError(400, 'Escriba la clave y vuelva a probar.');
     try {
       const r2 = await searchWeb(cfg, ['"Colombia"'], { timeoutMs: config.osintTimeoutMs });
       res.json({ ok: true, results: r2.results.length, sample: r2.results[0]?.title || null });

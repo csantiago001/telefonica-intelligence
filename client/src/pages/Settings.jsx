@@ -157,11 +157,22 @@ function SearchApi() {
   if (!f) return <Loading />;
   const save = async () => {
     setBusy(true); setTest(null);
-    try { await api.put('/settings/search', f); toast.success('Buscador guardado.'); cfg.reload(); } catch (e) { toast.error(e); } finally { setBusy(false); }
+    try {
+      await api.put('/settings/search', f);
+      // Verifica de inmediato para que el usuario sepa si quedó bien.
+      if (f.provider !== 'none') {
+        const t = await api.post('/settings/search/test', {});
+        setTest(t);
+        t.ok ? toast.success(`Buscador guardado y verificado (${t.results} resultados de prueba).`) : toast.warning('Buscador guardado, pero la prueba falló. Vea el detalle abajo.');
+      } else { toast.success('Buscador desactivado.'); }
+      cfg.reload();
+    } catch (e) { toast.error(e); } finally { setBusy(false); }
   };
   const probe = async () => {
     setBusy(true);
-    try { setTest(await api.post('/settings/search/test')); } catch (e) { toast.error(e); } finally { setBusy(false); }
+    // Prueba lo que está escrito ahora (si no se escribió, la ya guardada).
+    const body = f.provider === 'brave' ? { provider: 'brave', braveKey: f.braveKey } : f.provider === 'google' ? { provider: 'google', googleKey: f.googleKey, googleCx: f.googleCx } : {};
+    try { setTest(await api.post('/settings/search/test', body)); } catch (e) { toast.error(e); } finally { setBusy(false); }
   };
   const d = cfg.data;
   return (

@@ -51,7 +51,7 @@ const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } 
 async function searchOnce(cfg, query, opts) {
   if (cfg.provider === 'brave') {
     const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20&safesearch=off&text_decorations=false`;
-    const resp = await safeFetch(url, { ...opts, headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': cfg.key } });
+    const resp = await safeFetch(url, { ...opts, headers: { Accept: 'application/json', 'Accept-Encoding': 'identity', 'X-Subscription-Token': cfg.key } });
     if (resp.status >= 400) {
       let detail = '';
       try { detail = JSON.parse(resp.body.toString('utf8'))?.error?.detail || ''; } catch { /* sin cuerpo JSON */ }
