@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "Plataforma privada de investigación y análisis telefónico basada en fuentes legítimas.",
-  "workspaces": ["server", "client"],
-  "engines": { "node": ">=22.13.0" },
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "setup": "npm install && npm run build && node server/scripts/init-env.js",
     "build": "npm run build -w client",
@@ -13,9 +18,9 @@
     "dev": "node server/scripts/dev.js",
     "test": "npm run test -w server",
     "test:e2e": "node e2e/run.js",
-    "backup": "npm run backup -w server",
-    "restore": "npm run restore -w server",
-    "reset-admin": "npm run reset-admin -w server",
+    "backup": "node --disable-warning=ExperimentalWarning server/scripts/backup.js",
+    "restore": "node --disable-warning=ExperimentalWarning server/scripts/restore.js",
+    "reset-admin": "node --disable-warning=ExperimentalWarning server/scripts/reset-admin.js",
     "check-secrets": "node server/scripts/check-secrets.js"
   }
 }

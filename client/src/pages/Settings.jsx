@@ -194,7 +194,7 @@ function RetentionBackups({ settings, save, canBackup }) {
       </div>
       {canBackup && <div className="stack">
         <div className="row between"><h3><Database size={16} color="var(--lime)" style={{ verticalAlign: -3 }} /> Copias de seguridad</h3><button className="btn primary sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Archive size={14} />} Crear copia ahora</button></div>
-        <p className="small muted">Incluyen la base de datos, evidencias e informes, cifrados con la clave maestra (AES-256-GCM). Sin la clave MASTER_KEY no pueden restaurarse. Restauración: <span className="mono">npm run restore -- archivo.tibak</span></p>
+        <p className="small muted">Incluyen la base de datos, evidencias e informes, cifrados con la clave maestra (AES-256-GCM). Sin la clave MASTER_KEY no pueden restaurarse. Restauración: <span className="mono">npm run restore -- archivo.tibak --confirmar</span></p>
         {backups.loading ? <Loading /> : backups.data?.length === 0 ? <Empty icon={Archive} title="Sin copias" /> : backups.data?.map((b) => (
           <div key={b.name} className="row between" style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 10 }}>
             <div style={{ minWidth: 0 }}><div className="mono small break">{b.name}</div><div className="small muted">{fmtDateTime(b.createdAt)} · {fmtBytes(b.size)}</div></div>
