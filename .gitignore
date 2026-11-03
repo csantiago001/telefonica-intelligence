@@ -1,0 +1,30 @@
+# Dependencias y compilados
+node_modules/
+client/dist/
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Datos (NUNCA versionar: bases de datos, evidencias, informes, copias)
+data/
+data-*/
+*.db
+*.db-wal
+*.db-shm
+*.tibak
+*.enc
+
+# Pruebas y herramientas
+test-results/
+playwright-report/
+e2e/screenshots/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

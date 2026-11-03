@@ -1,0 +1,19 @@
+# Plantilla para desplegar el ENTORNO DE DEMOSTRACIÓN (datos ficticios) en Render.com.
+# Requiere una cuenta del usuario y su autorización expresa. No contiene secretos.
+services:
+  - type: web
+    name: telefonica-intelligence-demo
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_MODE
+        value: demo
+      - key: PORT
+        value: 8080
+      - key: TRUST_PROXY
+        value: "true"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: MAX_UPLOAD_MB
+        value: "1"

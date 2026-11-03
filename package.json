@@ -1,0 +1,21 @@
+{
+  "name": "telefonica-intelligence",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma privada de investigación y análisis telefónico basada en fuentes legítimas.",
+  "workspaces": ["server", "client"],
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "setup": "npm install && npm run build && node server/scripts/init-env.js",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "start:demo": "npm run start:demo -w server",
+    "dev": "node server/scripts/dev.js",
+    "test": "npm run test -w server",
+    "test:e2e": "node e2e/run.js",
+    "backup": "npm run backup -w server",
+    "restore": "npm run restore -w server",
+    "reset-admin": "npm run reset-admin -w server",
+    "check-secrets": "node server/scripts/check-secrets.js"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules
+client/dist
+data
+data-*
+.env
+.git
+e2e/screenshots
+*.tibak
