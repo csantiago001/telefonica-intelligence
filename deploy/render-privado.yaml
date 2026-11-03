@@ -1,0 +1,45 @@
+# Blueprint de Render.com para el ENTORNO PRIVADO con datos permanentes.
+# Úselo para una instalación real accesible desde cualquier dispositivo.
+#
+# CÓMO USARLO:
+#   1. Copie este archivo a la raíz del proyecto con el nombre render.yaml
+#      (reemplaza al de demostración).
+#   2. En Render: New → Blueprint → elija el repositorio.
+#   3. Render pedirá el valor de MASTER_KEY (está marcado como secreto): pegue
+#      la MISMA clave de su archivo .env local, o genere una nueva de 64
+#      caracteres hexadecimales (anótela: sin ella no se descifran los datos).
+#
+# COSTO: este blueprint usa un plan de pago ("starter") y un disco persistente,
+# porque el plan gratuito de Render NO conserva archivos entre reinicios.
+# Revise el precio vigente en render.com antes de aplicar.
+services:
+  - type: web
+    name: telefonica-intelligence
+    runtime: node
+    plan: starter            # el plan gratuito borra los datos; "starter" los conserva
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: ti-datos
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22.23.4"
+      - key: APP_MODE
+        value: private
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
+      - key: MASTER_KEY
+        sync: false            # Render se la pedirá; no se guarda en el repositorio
+      - key: PUBLIC_URL
+        sync: false            # pegue aquí la URL que Render le asigne (https://...onrender.com)
