@@ -9,6 +9,7 @@ import { Login, Setup, ResetPassword } from './pages/Auth.jsx';
 import Consent from './pages/Consent.jsx';
 
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Investigate = lazy(() => import('./pages/Investigate.jsx'));
 const PhoneAnalysis = lazy(() => import('./pages/PhoneAnalysis.jsx'));
 const Osint = lazy(() => import('./pages/Osint.jsx'));
 const Findings = lazy(() => import('./pages/Osint.jsx').then((m) => ({ default: m.Findings })));
@@ -68,6 +69,7 @@ function Root() {
             : (
               <Route element={<Layout />}>
                 <Route index element={<Guard perm="dashboard.view"><Dashboard /></Guard>} />
+                <Route path="investigar" element={<Guard perm="phone.analyze"><Investigate /></Guard>} />
                 <Route path="analisis" element={<Guard perm="phone.history"><PhoneAnalysis /></Guard>} />
                 <Route path="osint" element={<Guard perm="osint.history"><Osint /></Guard>} />
                 <Route path="hallazgos" element={<Guard perm="osint.history"><Findings /></Guard>} />

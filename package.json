@@ -21,6 +21,7 @@
     "backup": "node --disable-warning=ExperimentalWarning server/scripts/backup.js",
     "restore": "node --disable-warning=ExperimentalWarning server/scripts/restore.js",
     "reset-admin": "node --disable-warning=ExperimentalWarning server/scripts/reset-admin.js",
-    "check-secrets": "node server/scripts/check-secrets.js"
+    "check-secrets": "node server/scripts/check-secrets.js",
+    "publicar": "node --disable-warning=ExperimentalWarning server/scripts/publicar.js"
   }
 }

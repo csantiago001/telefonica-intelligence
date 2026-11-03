@@ -9,6 +9,7 @@ import { requirePerm, can } from '../middleware/auth.js';
 import { runRetention } from '../jobs/retention.js';
 import { createBackup, listBackups, readBackup } from '../lib/backup.js';
 import { TOOLS } from '../services/osint.js';
+import { publicSearchConfig, saveSearchConfig, getSearchConfig, searchWeb } from '../services/websearch.js';
 
 const dirSize = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).reduce((n, f) => n + (fs.statSync(path.join(dir, f)).isFile() ? fs.statSync(path.join(dir, f)).size : 0), 0) : 0);
 
@@ -97,6 +98,7 @@ export default function systemRoutes({ db, config, startedAt, version }) {
   r.get('/settings', requirePerm('admin.settings'), (req, res) => {
     const s = getAllSettings(db);
     delete s['backup.last_auto'];
+    for (const k of Object.keys(s)) if (k.startsWith('search.')) delete s[k];
     res.json({ settings: s, osintTools: Object.fromEntries(Object.entries(TOOLS).map(([k, t]) => [k, { label: t.label, source: t.source }])) });
   });
 
@@ -134,6 +136,31 @@ export default function systemRoutes({ db, config, startedAt, version }) {
     db.tx(() => Object.entries(changed).forEach(([k, v]) => setSetting(db, k, v, req.user.id)));
     audit(db, req, 'settings.updated', { detail: changed, severity: 'warning' });
     res.json({ ok: true });
+  });
+
+  // Buscador web automático (claves cifradas con la clave maestra; nunca se devuelven)
+  r.get('/settings/search', requirePerm('admin.settings'), (req, res) => res.json(publicSearchConfig(db)));
+  r.put('/settings/search', requirePerm('admin.settings'), (req, res) => {
+    const d = parse(z.object({
+      provider: z.enum(['none', 'brave', 'google']),
+      braveKey: z.string().trim().max(300).optional().default(''),
+      googleKey: z.string().trim().max(300).optional().default(''),
+      googleCx: z.string().trim().max(200).optional(),
+    }), req.body);
+    saveSearchConfig(db, config.masterKey, d, req.user.id);
+    if (d.provider !== 'none' && !getSearchConfig(db, config.masterKey)) throw new HttpError(400, d.provider === 'brave' ? 'Ingrese la clave de Brave Search.' : 'Ingrese la clave de Google y el identificador del buscador (cx).');
+    audit(db, req, 'settings.search_api_updated', { detail: { provider: d.provider }, severity: 'warning' });
+    res.json({ ok: true, ...publicSearchConfig(db) });
+  });
+  r.post('/settings/search/test', requirePerm('admin.settings'), async (req, res) => {
+    const cfg = getSearchConfig(db, config.masterKey);
+    if (!cfg) throw new HttpError(400, 'No hay un buscador configurado.');
+    try {
+      const r2 = await searchWeb(cfg, ['"Colombia"'], { timeoutMs: config.osintTimeoutMs });
+      res.json({ ok: true, results: r2.results.length, sample: r2.results[0]?.title || null });
+    } catch (e) {
+      res.json({ ok: false, error: e.message });
+    }
   });
 
   r.post('/settings/reset', requirePerm('admin.settings'), (req, res) => {

@@ -4,14 +4,19 @@ import { now } from '../db/database.js';
 import { analyzePhone, countryList } from '../lib/phone.js';
 import { getSetting } from '../lib/settings.js';
 import { ensureCredits, chargeCredits } from '../lib/credits.js';
-import { HttpError, parse, audit, pageSchema, paginate, jsonParse, toCsv } from '../lib/util.js';
+import { HttpError, parse, audit, pageSchema, paginate, jsonParse, toCsv, nextCode } from '../lib/util.js';
 import { requirePerm } from '../middleware/auth.js';
 import { TOOLS, validateTarget, runTool } from '../services/osint.js';
+import { getSearchConfig } from '../services/websearch.js';
 
 const RELIABILITY = ['confirmado', 'probable', 'no_verificado'];
 
 export default function investigationRoutes({ db, config }) {
   const r = Router();
+  const osintOpts = () => ({
+    timeoutMs: config.osintTimeoutMs, allowPrivate: config.allowPrivateNetworkFetch,
+    searchApi: getSearchConfig(db, config.masterKey), defaultCountry: getSetting(db, 'system.default_country'),
+  });
   const caseExists = (id) => {
     if (id == null) return null;
     const c = db.get('SELECT id, status FROM cases WHERE id = ?', id);
@@ -97,6 +102,71 @@ export default function investigationRoutes({ db, config }) {
     res.json({ ...row, result: jsonParse(row.result, {}) });
   });
 
+  // ---------------- Investigación integral de un número ----------------
+  r.post('/investigate/phone', requirePerm('phone.analyze', 'osint.query'), async (req, res) => {
+    const d = parse(z.object({
+      number: z.string().trim().min(3, 'Ingrese un número').max(40),
+      defaultCountry: z.string().length(2).toUpperCase().optional(),
+      caseId: z.coerce.number().int().positive().nullable().optional(),
+      createCase: z.boolean().default(false),
+      search: z.boolean().default(true),
+    }), req.body);
+    const country = d.defaultCountry || req.user.preferences?.defaultCountry || getSetting(db, 'system.default_country');
+    let caseId = caseExists(d.caseId ?? null);
+    ensureCredits(db, req.user, 'phone_analysis');
+    const a = analyzePhone(d.number, country);
+    let caseCode = caseId ? db.get('SELECT code FROM cases WHERE id = ?', caseId).code : null;
+    if (!caseId && d.createCase && a.e164) {
+      if (!req.permissions.has('cases.write')) throw new HttpError(403, 'No tiene permiso para crear expedientes.');
+      db.tx(() => {
+        caseCode = nextCode(db, 'cases', 'TI');
+        caseId = db.run(
+          "INSERT INTO cases (code, title, description, objective, classification, priority, status, tags, opened_at, owner_id, created_by, is_demo, created_at, updated_at) VALUES (?, ?, ?, ?, 'verificacion', 'media', 'abierto', '[\"numero\"]', ?, ?, ?, ?, ?, ?)",
+          caseCode, `Investigación del número ${a.e164}`, `Expediente creado desde "Investigar número" para ${a.fields.find((f) => f.key === 'international')?.value}.`,
+          'Recopilar información pública relacionada con el número.', now(), req.user.id, req.user.id, config.isDemo ? 1 : 0, now(), now()
+        ).lastInsertRowid;
+        db.run('INSERT INTO case_events (case_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', caseId, 'creado', `Expediente ${caseCode} creado desde Investigar número`, req.user.id, now());
+      });
+      audit(db, req, 'case.created', { entity: 'case', entityId: caseId, detail: { code: caseCode, from: 'investigate' } });
+    }
+    const pqId = db.run(
+      'INSERT INTO phone_queries (input, default_country, e164, valid, country, result, case_id, user_id, credits_used, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+      d.number, country, a.e164 || null, a.valid ? 1 : 0, a.country || null, JSON.stringify(a), caseId, req.user.id, config.isDemo ? 1 : 0, now()
+    ).lastInsertRowid;
+    const c1 = chargeCredits(db, req.user, 'phone_analysis', `phone_query:${pqId}`, config.isDemo);
+    db.run('UPDATE phone_queries SET credits_used = ? WHERE id = ?', c1, pqId);
+    if (caseId && a.e164) db.run('INSERT OR IGNORE INTO case_phones (case_id, e164, label, phone_query_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)', caseId, a.e164, a.summary.slice(0, 120), pqId, req.user.id, now());
+    caseEvent(caseId, 'consulta_telefonica', `${d.number} → ${a.summary}`, req.user.id);
+
+    let search = null;
+    if (d.search && a.e164 && (getSetting(db, 'osint.sources') || {}).search !== false) {
+      const started = Date.now();
+      let out;
+      let error = null;
+      try {
+        out = await runTool('search', a.e164, osintOpts());
+        if (out.status === 'fallido') error = out.data?.error || 'Las fuentes no respondieron';
+      } catch (e) {
+        error = e.message;
+        out = { status: 'fallido', data: null, findings: [] };
+      }
+      const src = out.source || TOOLS.search.source;
+      const oid = db.run(
+        'INSERT INTO osint_queries (tool, target, status, source, source_url, result, error, duration_ms, case_id, user_id, credits_used, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+        'search', a.e164, out.status, src, out.sourceUrl || null, out.data ? JSON.stringify(out.data) : null, error, Date.now() - started, caseId, req.user.id, config.isDemo ? 1 : 0, now()
+      ).lastInsertRowid;
+      let c2 = 0;
+      if (out.status !== 'fallido') {
+        try { c2 = chargeCredits(db, req.user, 'osint_search', `osint_query:${oid}`, config.isDemo); } catch { c2 = 0; }
+        db.run('UPDATE osint_queries SET credits_used = ? WHERE id = ?', c2, oid);
+      }
+      caseEvent(caseId, 'consulta_osint', `Búsqueda pública de ${a.e164} → ${out.status}`, req.user.id);
+      search = { id: oid, status: out.status, source: src, data: out.data, suggestedFindings: out.findings || [], error, durationMs: Date.now() - started, creditsUsed: c2, consultedAt: now() };
+    }
+    audit(db, req, 'phone.investigated', { entity: 'phone_query', entityId: pqId, detail: { e164: a.e164, caseId, search: search?.status } });
+    res.json({ analysis: { id: pqId, ...a }, search, caseId, caseCode, balance: db.get('SELECT credits FROM users WHERE id = ?', req.user.id).credits });
+  });
+
   // ---------------- OSINT ----------------
   r.get('/osint/tools', (req, res) => {
     const enabled = getSetting(db, 'osint.sources') || {};
@@ -116,7 +186,8 @@ export default function investigationRoutes({ db, config }) {
     let out;
     let error = null;
     try {
-      out = await runTool(data.tool, target, { timeoutMs: config.osintTimeoutMs, allowPrivate: config.allowPrivateNetworkFetch });
+      out = await runTool(data.tool, target, osintOpts());
+      if (out.status === 'fallido' && out.data?.error) error = out.data.error;
     } catch (e) {
       error = e.message || 'Error desconocido';
       out = { status: 'fallido', data: null, findings: [], sourceUrl: null };
@@ -124,7 +195,7 @@ export default function investigationRoutes({ db, config }) {
     const duration = Date.now() - started;
     const id = db.run(
       'INSERT INTO osint_queries (tool, target, status, source, source_url, result, error, duration_ms, case_id, user_id, credits_used, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
-      data.tool, target, out.status, tool.source, out.sourceUrl, out.data ? JSON.stringify(out.data) : null, error, duration, caseId, req.user.id, config.isDemo ? 1 : 0, now()
+      data.tool, target, out.status, out.source || tool.source, out.sourceUrl, out.data ? JSON.stringify(out.data) : null, error, duration, caseId, req.user.id, config.isDemo ? 1 : 0, now()
     ).lastInsertRowid;
     // Solo se cobran las consultas que efectivamente llegaron a la fuente.
     let cost = 0;
@@ -135,7 +206,7 @@ export default function investigationRoutes({ db, config }) {
     caseEvent(caseId, 'consulta_osint', `${tool.label}: ${target} → ${out.status}`, req.user.id);
     audit(db, req, 'osint.query', { entity: 'osint_query', entityId: id, detail: { tool: data.tool, target, status: out.status }, severity: out.status === 'fallido' ? 'warning' : 'info' });
     res.json({
-      id, tool: data.tool, toolLabel: tool.label, target, status: out.status, source: tool.source, sourceUrl: out.sourceUrl,
+      id, tool: data.tool, toolLabel: tool.label, target, status: out.status, source: out.source || tool.source, sourceUrl: out.sourceUrl,
       defaultReliability: tool.reliability, data: out.data, suggestedFindings: out.findings, error, durationMs: duration,
       creditsUsed: cost, consultedAt: now(), balance: db.get('SELECT credits FROM users WHERE id = ?', req.user.id).credits,
     });

@@ -504,3 +504,32 @@ describe('Entorno de demostración', () => {
     } finally { demo.cleanup(); }
   });
 });
+
+describe('Investigar número y buscador web', () => {
+  test('analiza, crea expediente y registra la búsqueda sin inventar resultados', async () => {
+    const r = await admin.post('/api/investigate/phone').send({ number: '+57 310 555 0101', createCase: true });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.analysis.e164, '+573105550101');
+    assert.match(r.body.caseCode, /^TI-/);
+    assert.ok(r.body.search);
+    assert.equal(r.body.search.data.webConfigured, false);
+    assert.ok(r.body.search.data.assisted.links.length > 0);
+    if (r.body.search.status === 'fallido') assert.equal(r.body.search.creditsUsed, 0);
+    const c = (await admin.get(`/api/cases/${r.body.caseId}`)).body;
+    assert.equal(c.phones[0].e164, '+573105550101');
+    assert.equal(c.osintQueries.length, 1);
+  });
+  test('configuración del buscador: clave cifrada y nunca expuesta', async () => {
+    assert.equal((await admin.put('/api/settings/search').send({ provider: 'brave' })).status, 400);
+    const r = await admin.put('/api/settings/search').send({ provider: 'brave', braveKey: 'CLAVE-SECRETA-123' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.braveKeySet, true);
+    assert.equal(JSON.stringify(r.body).includes('CLAVE-SECRETA'), false);
+    assert.equal(JSON.stringify((await admin.get('/api/settings')).body).includes('CLAVE-SECRETA'), false);
+    const raw = ctx.db.get("SELECT value FROM settings WHERE key = 'search.brave_key_enc'").value;
+    assert.equal(raw.includes('CLAVE-SECRETA'), false);
+    const t = await admin.post('/api/settings/search/test');
+    assert.equal(t.body.ok, false, 'sin Internet o con clave falsa la prueba debe fallar, nunca simular');
+    await admin.put('/api/settings/search').send({ provider: 'none' });
+  });
+});

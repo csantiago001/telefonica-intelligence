@@ -4,6 +4,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { safeFetch, fetchJson, FetchError } from '../lib/safeHttp.js';
 import { analyzePhone } from '../lib/phone.js';
+import { searchWeb, phoneQueryVariants } from './websearch.js';
 
 export const DOMAIN_RE = /^(?=.{1,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/i;
 
@@ -21,7 +22,7 @@ export const TOOLS = {
   wayback: { label: 'Historial web (Internet Archive)', target: 'url', cost: 'osint_wayback', source: 'Internet Archive — Wayback Machine', reliability: 'confirmado' },
   link: { label: 'Verificación de enlace y metadatos', target: 'url', cost: 'osint_link', source: 'Conexión directa al sitio', reliability: 'confirmado' },
   ip: { label: 'Dirección IP (RDAP + DNS inverso)', target: 'ip', cost: 'osint_ip', source: 'RDAP de registros regionales (LACNIC, ARIN, RIPE...) vía rdap.org', reliability: 'confirmado' },
-  search: { label: 'Búsqueda de información pública', target: 'texto', cost: 'osint_search', source: 'DuckDuckGo Instant Answer API + búsqueda asistida', reliability: 'no_verificado' },
+  search: { label: 'Búsqueda de información pública', target: 'texto', cost: 'osint_search', source: 'Buscador web (Brave/Google, si está configurado) + DuckDuckGo + búsqueda asistida', reliability: 'no_verificado' },
 };
 
 export function validateTarget(tool, raw) {
@@ -265,29 +266,43 @@ export function searchLinks(query) {
 
 async function runSearch(query, opts) {
   const assisted = searchLinks(query);
-  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1&no_redirect=1`;
+  const phone = analyzePhone(query, opts.defaultCountry || 'CO');
+  // 1) Búsqueda automática real con API del usuario (si está configurada)
+  let web = null;
+  let webError = null;
+  if (opts.searchApi) {
+    const queries = phone.valid ? phoneQueryVariants(phone) : [`"${query.replace(/"/g, '')}"`];
+    try { web = await searchWeb(opts.searchApi, queries, opts); } catch (e) { webError = e.message; }
+  }
+  // 2) Resumen público de DuckDuckGo (sin clave)
   let instant = null;
   let instantError = null;
   try {
-    const r = await fetchJson(url, opts);
+    const r = await fetchJson(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1&no_redirect=1`, opts);
     const d = r.data || {};
     const topics = [];
     for (const t of d.RelatedTopics || []) {
       if (t.Text) topics.push({ text: t.Text, url: t.FirstURL });
-      for (const s of t.Topics || []) if (s.Text) topics.push({ text: s.Text, url: s.FirstURL });
+      for (const s2 of t.Topics || []) if (s2.Text) topics.push({ text: s2.Text, url: s2.FirstURL });
     }
     instant = { heading: d.Heading || null, abstract: d.AbstractText || null, abstractSource: d.AbstractSource || null, abstractUrl: d.AbstractURL || null, entity: d.Entity || null, topics: topics.slice(0, 20) };
   } catch (e) {
     instantError = e.message;
   }
   const hasInstant = instant && (instant.abstract || instant.topics.length);
-  const findings = hasInstant
-    ? [instant.abstract && { title: `Resumen público: ${instant.heading || query}`, detail: `${instant.abstract} (Fuente: ${instant.abstractSource})` }, ...instant.topics.slice(0, 5).map((t) => ({ title: t.text.slice(0, 140), detail: t.url }))].filter(Boolean)
-    : [];
-  const data = { query, instant, instantError, assisted };
-  // La búsqueda asistida siempre produce enlaces; el estado refleja solo la consulta automática real.
-  const status = instantError ? 'parcial' : hasInstant ? 'exito' : 'sin_resultados';
-  return { status, data, findings, sourceUrl: `https://duckduckgo.com/?q=${encodeURIComponent(query)}` };
+  const findings = [];
+  if (web) for (const r of web.results.slice(0, 15)) findings.push({ title: `${r.site}: ${r.title}`.slice(0, 280), detail: `${r.snippet}\n${r.url}`, url: r.url });
+  if (hasInstant) {
+    if (instant.abstract) findings.push({ title: `Resumen público: ${instant.heading || query}`, detail: `${instant.abstract} (Fuente: ${instant.abstractSource})`, url: instant.abstractUrl });
+    instant.topics.slice(0, 5).forEach((t) => findings.push({ title: t.text.slice(0, 140), detail: t.url, url: t.url }));
+  }
+  const data = { query, web, webError, webConfigured: !!opts.searchApi, instant, instantError, assisted, phone: phone.valid ? { e164: phone.e164, summary: phone.summary } : null };
+  const anyOk = !!web || !instantError;
+  const anyResult = (web && web.results.length > 0) || hasInstant;
+  // Si ninguna fuente automática respondió, el estado es "fallido" (se conservan solo los enlaces asistidos).
+  const status = !anyOk ? 'fallido' : (webError || instantError) ? 'parcial' : anyResult ? 'exito' : 'sin_resultados';
+  if (status === 'fallido') data.error = webError || instantError;
+  return { status, data, findings, sourceUrl: web?.results[0]?.url ? null : `https://duckduckgo.com/?q=${encodeURIComponent(query)}`, source: web ? `${web.providerLabel} + DuckDuckGo` : undefined };
 }
 
 const RUNNERS = { dns: runDns, rdap: runRdap, ct: runCt, wayback: runWayback, link: runLink, ip: runIp, search: runSearch };

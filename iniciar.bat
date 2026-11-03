@@ -12,6 +12,7 @@ if not exist node_modules (
   echo Instalando dependencias, solo la primera vez...
   call npm install --no-audit --no-fund || (pause & exit /b 1)
 )
+if exist client\dist\index.html del /q client\dist\index.html
 if not exist client\dist\index.html (
   echo Compilando la interfaz...
   call npm run build || (pause & exit /b 1)

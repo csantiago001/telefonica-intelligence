@@ -28,7 +28,7 @@ export default function Dashboard() {
     <>
       <PageHead eyebrow="Centro de operaciones" icon={LayoutDashboard} title={`${greet}, ${user.fullName.split(' ')[0]}`} sub="Resumen de la actividad investigativa de los últimos 30 días.">
         {can('cases.write') && <button className="btn primary" onClick={() => nav('/expedientes?nuevo=1')}><Plus size={16} /> Nuevo expediente</button>}
-        {can('phone.analyze') && <button className="btn" onClick={() => nav('/analisis')}><Phone size={16} /> Analizar número</button>}
+        {can('phone.analyze') && <button className="btn" onClick={() => nav('/investigar')}><Phone size={16} /> Investigar número</button>}
       </PageHead>
 
       <div className="grid g4">
@@ -151,7 +151,7 @@ export default function Dashboard() {
           <div className="card">
             <div className="card-head"><h3>Accesos rápidos</h3></div>
             <div className="card-body quick">
-              {can('phone.analyze') && <Link to="/analisis"><Phone size={17} /> Analizar número</Link>}
+              {can('phone.analyze') && <Link to="/investigar"><Phone size={17} /> Investigar número</Link>}
               {can('osint.query') && <Link to="/osint"><Radar size={17} /> Consulta OSINT</Link>}
               {can('cases.write') && <Link to="/expedientes?nuevo=1"><FolderKanban size={17} /> Nuevo expediente</Link>}
               {can('evidence.write') && <Link to="/evidencias?nuevo=1"><FileArchive size={17} /> Cargar evidencia</Link>}

@@ -5,6 +5,7 @@ import { api, qs } from '../lib/api.js';
 import { useAuth, useToast, useConfirm } from '../lib/context.jsx';
 import { useFetch, PageHead, Field, Spinner, OsintStatusBadge, ReliabilityBadge, Badge, Pagination, Empty, Loading, SearchInput, CaseSelect, Modal, DemoBadge } from '../components/ui.jsx';
 import { fmtDateTime, RELIABILITY } from '../lib/format.js';
+import { WebResults } from '../components/WebResults.jsx';
 
 const ICONS = { dns: Server, rdap: Globe, ct: ShieldCheck, wayback: Archive, link: Link2, ip: Network, search: Search };
 const PLACEHOLDER = { dominio: 'ejemplo.com', url: 'https://ejemplo.com/pagina', ip: '200.1.2.3', texto: 'Nombre, número, usuario o empresa' };
@@ -114,24 +115,7 @@ function ResultView({ tool, data }) {
     <dl className="dl"><dt>IP</dt><dd className="mono">{data.ip}</dd><dt>Red</dt><dd>{data.name || '—'} ({data.handle})</dd><dt>País</dt><dd>{data.country || '—'}</dd><dt>Rango</dt><dd className="mono small">{data.range || '—'} {data.cidr?.join(', ')}</dd>
       <dt>Organizaciones</dt><dd>{data.organizations?.join(', ') || '—'}</dd><dt>DNS inverso</dt><dd className="mono small">{data.reverse?.join(', ') || '—'}</dd></dl>
   );
-  if (tool === 'search') return (
-    <div className="stack">
-      {data.instantError && <div className="alert warning"><AlertTriangle size={16} color="var(--amber)" /> La consulta automática a DuckDuckGo falló: {data.instantError}. Puede usar la búsqueda asistida.</div>}
-      {data.instant && (data.instant.abstract || data.instant.topics.length > 0) ? (
-        <div className="stack" style={{ gap: 8 }}>
-          {data.instant.abstract && <div className="alert info" style={{ display: 'block' }}><b>{data.instant.heading}</b><div>{data.instant.abstract}</div>{data.instant.abstractUrl && <a href={data.instant.abstractUrl} target="_blank" rel="noopener noreferrer" className="small">{data.instant.abstractSource} <ExternalLink size={11} /></a>}</div>}
-          {data.instant.topics.map((t, i) => <div key={i} className="small"><a href={t.url} target="_blank" rel="noopener noreferrer">{t.text}</a></div>)}
-        </div>
-      ) : !data.instantError && <div className="muted small">La API pública no devolvió un resumen para esta consulta.</div>}
-      <div>
-        <h3 style={{ marginBottom: 6 }}>Búsqueda asistida</h3>
-        <p className="small muted">Enlaces generados para revisar manualmente en buscadores públicos (la plataforma no los ejecuta ni extrae resultados). Registre lo relevante como hallazgo indicando su confiabilidad.</p>
-        <div className="table-wrap"><table className="table"><tbody>
-          {data.assisted.links.map((l, i) => <tr key={i}><td className="small muted">{l.engine}</td><td className="mono small">{l.query}</td><td className="right"><a className="btn sm" href={l.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Abrir</a></td></tr>)}
-        </tbody></table></div>
-      </div>
-    </div>
-  );
+  if (tool === 'search') return <WebResults data={data} />;
   return <pre className="code-block">{JSON.stringify(data, null, 2)}</pre>;
 }
 
@@ -152,7 +136,7 @@ export function OsintResult({ r, onSaveFinding }) {
             {r.suggestedFindings.map((f, i) => (
               <div key={i} className="row between" style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 10, flexWrap: 'nowrap' }}>
                 <div style={{ minWidth: 0 }}><div style={{ fontWeight: 600 }}>{f.title}</div>{f.detail && <div className="small muted" style={{ wordBreak: 'break-word' }}>{f.detail}</div>}</div>
-                <button className="btn sm" onClick={() => onSaveFinding({ title: f.title.slice(0, 300), detail: f.detail || '', sourceName: r.source, sourceUrl: r.sourceUrl || '', reliability: r.defaultReliability, osintQueryId: r.id })}><Save size={13} /> Guardar</button>
+                <button className="btn sm" onClick={() => onSaveFinding({ title: f.title.slice(0, 300), detail: f.detail || '', sourceName: r.source, sourceUrl: f.url || r.sourceUrl || '', reliability: r.defaultReliability, osintQueryId: r.id })}><Save size={13} /> Guardar</button>
               </div>
             ))}
           </div>

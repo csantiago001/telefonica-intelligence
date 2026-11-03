@@ -2,6 +2,14 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y versionado semántico.
 
+## [1.1.0] — 2026-11-03
+
+### Añadido
+- **Investigar número**: análisis + búsqueda pública automática en un paso, con creación opcional de expediente y guardado de hallazgos.
+- Búsqueda web automática con API oficial (Brave Search o Google Programmable Search) usando la clave del usuario, cifrada en reposo.
+- **Modo público** (`iniciar-publico.bat`, `npm run publicar`): túnel HTTPS gratuito de Cloudflare para usar la plataforma y los enlaces de consentimiento desde celulares.
+- Los lanzadores recompilan la interfaz en cada inicio para aplicar actualizaciones.
+
 ## [1.0.0] — 2026-11-03
 
 Primera versión, desarrollada desde cero.

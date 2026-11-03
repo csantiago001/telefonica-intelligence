@@ -11,7 +11,7 @@ if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt
   echo "Se requiere Node.js 22.13 o superior (tiene $(node -v))."; exit 1
 fi
 [ -d node_modules ] || { echo "Instalando dependencias (solo la primera vez)…"; npm install --no-audit --no-fund; }
-[ -f client/dist/index.html ] || { echo "Compilando la interfaz…"; npm run build; }
+echo "Compilando la interfaz…"; npm run build
 node server/scripts/init-env.js
 MODE=${1:-private}
 if [ "$MODE" = "demo" ]; then URL="http://127.0.0.1:8081"; else URL="http://127.0.0.1:$(grep -E '^PORT=' .env | cut -d= -f2 || echo 8080)"; fi

@@ -147,10 +147,53 @@ function SystemParams({ settings, save }) {
   );
 }
 
+function SearchApi() {
+  const toast = useToast();
+  const cfg = useFetch('/settings/search');
+  const [f, setF] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState(null);
+  useEffect(() => { if (cfg.data) setF({ provider: cfg.data.provider, braveKey: '', googleKey: '', googleCx: cfg.data.googleCx }); }, [cfg.data]);
+  if (!f) return <Loading />;
+  const save = async () => {
+    setBusy(true); setTest(null);
+    try { await api.put('/settings/search', f); toast.success('Buscador guardado.'); cfg.reload(); } catch (e) { toast.error(e); } finally { setBusy(false); }
+  };
+  const probe = async () => {
+    setBusy(true);
+    try { setTest(await api.post('/settings/search/test')); } catch (e) { toast.error(e); } finally { setBusy(false); }
+  };
+  const d = cfg.data;
+  return (
+    <div className="card card-pad" style={{ background: 'var(--panel-2)' }}>
+      <h3 style={{ marginBottom: 6 }}>Búsqueda automática en Internet</h3>
+      <p className="small muted">Permite que "Investigar número" y la herramienta de búsqueda muestren resultados reales de la web. Use su propia clave (gratuita). Se guarda cifrada y nunca se muestra de nuevo.</p>
+      <div className="form-grid mt">
+        <Field label="Buscador"><select className="select" value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })}>
+          <option value="none">Desactivado</option><option value="brave">Brave Search API (recomendado)</option><option value="google">Google Programmable Search</option></select></Field>
+        <div />
+        {f.provider === 'brave' && <Field label={`Clave de Brave ${d.braveKeySet ? '(ya registrada — deje vacío para conservarla)' : ''}`} className="full" help={<>Créela gratis en <a href={d.providers.brave.signup} target="_blank" rel="noopener noreferrer">api-dashboard.search.brave.com</a> → plan "Free" → API Keys.</>}>
+          <input className="input mono" type="password" value={f.braveKey} onChange={(e) => setF({ ...f, braveKey: e.target.value })} placeholder={d.braveKeySet ? '••••••••••••' : 'BSA…'} autoComplete="off" /></Field>}
+        {f.provider === 'google' && <>
+          <Field label={`Clave de API de Google ${d.googleKeySet ? '(ya registrada)' : ''}`} help={<a href={d.providers.google.signup} target="_blank" rel="noopener noreferrer">Instrucciones de Google</a>}><input className="input mono" type="password" value={f.googleKey} onChange={(e) => setF({ ...f, googleKey: e.target.value })} placeholder={d.googleKeySet ? '••••••••••••' : 'AIza…'} autoComplete="off" /></Field>
+          <Field label="Identificador del buscador (cx)" help="Cree un buscador en programmablesearchengine.google.com con 'Buscar en toda la Web'."><input className="input mono" value={f.googleCx} onChange={(e) => setF({ ...f, googleCx: e.target.value })} /></Field>
+        </>}
+      </div>
+      <div className="row mt">
+        <button className="btn primary" onClick={save} disabled={busy}>{busy ? <Spinner /> : <Save size={15} />} Guardar buscador</button>
+        {d.provider !== 'none' && <button className="btn" onClick={probe} disabled={busy}><Play size={15} /> Probar conexión</button>}
+        {d.provider !== 'none' && <Badge cls="b-lime" dot>Activo: {d.providers[d.provider]?.label}</Badge>}
+      </div>
+      {test && <div className={`alert ${test.ok ? 'success' : 'error'} mt`}>{test.ok ? `Conexión correcta: ${test.results} resultado(s) de prueba.` : `Falló: ${test.error}`}</div>}
+    </div>
+  );
+}
+
 function Sources({ settings, tools, save }) {
   const [f, setF] = useState({ ...settings['osint.sources'] });
   return (
     <div className="stack">
+      <SearchApi />
       <p className="muted">Active o desactive cada fuente pública. Las fuentes desactivadas no pueden consultarse. Ninguna requiere clave de API ni tiene costo.</p>
       {Object.entries(tools).map(([k, t]) => (
         <div key={k} className="row between" style={{ padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 10 }}>

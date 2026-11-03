@@ -35,6 +35,18 @@ Plataforma privada de investigación y análisis telefónico basada **exclusivam
 
 > **Guarde una copia de `MASTER_KEY` (archivo `.env`) fuera del equipo.** Sin ella no se pueden descifrar evidencias, informes ni copias de seguridad.
 
+### Acceso desde el celular u otro computador (dirección pública HTTPS)
+
+Haga doble clic en **`iniciar-publico.bat`** (Windows) o **`iniciar-publico.command`** (macOS). La primera vez descarga el conector gratuito de Cloudflare. En la ventana aparecerá una dirección como `https://palabras-aleatorias.trycloudflare.com`: ábrala desde cualquier celular o computador. Los enlaces de ubicación con consentimiento usarán esa dirección y funcionarán en celulares.
+
+- Los datos siguen guardados en su computador; debe mantener el equipo encendido y la ventana abierta.
+- La dirección **cambia cada vez** que reinicia. Para una dirección fija se necesita un dominio propio (ver Manual técnico).
+- Active la verificación en dos pasos, porque la página queda accesible desde Internet.
+
+### Búsqueda automática de información pública
+
+Menú **Investigar número**: escribe el número, pulsa *Investigar* y obtiene el análisis y las páginas de Internet donde aparece publicado (en sus distintos formatos), con fuente y fecha, guardados en un expediente. Para los resultados automáticos, un administrador registra una clave **gratuita** de Brave Search en *Configuración › Fuentes* (crearla en <https://api-dashboard.search.brave.com>, plan Free).
+
 ### Entorno de demostración (datos ficticios)
 
 ```bash

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Phone, Radar, FolderKanban, FileArchive, FileText, MapPin, Coins, Settings, ShieldCheck,
+  LayoutDashboard, ScanSearch, Phone, Radar, FolderKanban, FileArchive, FileText, MapPin, Coins, Settings, ShieldCheck,
   Bell, Menu, LogOut, User, Search, Users, KeyRound, ScrollText, Lightbulb, CheckCheck,
 } from 'lucide-react';
 import { useAuth } from '../lib/context.jsx';
@@ -12,6 +12,7 @@ import { fmtNum, timeAgo } from '../lib/format.js';
 const NAV = [
   { section: 'Operación' },
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', end: true },
+  { to: '/investigar', label: 'Investigar número', icon: ScanSearch, perm: 'phone.analyze' },
   { to: '/analisis', label: 'Análisis telefónico', icon: Phone, perm: 'phone.history' },
   { to: '/osint', label: 'OSINT', icon: Radar, perm: 'osint.history' },
   { to: '/hallazgos', label: 'Hallazgos', icon: Lightbulb, perm: 'osint.history' },

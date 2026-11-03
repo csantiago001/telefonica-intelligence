@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   'retention.closed_cases_days': 0,
   'backup.auto_daily': true,
   'backup.keep': 7,
+  'search.provider': 'none',
 };
 
 export function getSetting(db, key) {
