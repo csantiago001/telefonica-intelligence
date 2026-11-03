@@ -1,6 +1,6 @@
 // Búsqueda web automática mediante APIs oficiales (Brave Search o Google Programmable Search).
 // Requiere una clave propia del usuario. Nunca se simulan resultados.
-import { fetchJson, FetchError } from '../lib/safeHttp.js';
+import { fetchJson, safeFetch, FetchError } from '../lib/safeHttp.js';
 import { getSetting, setSetting } from '../lib/settings.js';
 import { encryptString, decryptString } from '../lib/crypto.js';
 
@@ -51,14 +51,21 @@ const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } 
 async function searchOnce(cfg, query, opts) {
   if (cfg.provider === 'brave') {
     const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20&safesearch=off&text_decorations=false`;
-    let r;
-    try {
-      r = await fetchJson(url, { ...opts, headers: { 'X-Subscription-Token': cfg.key } });
-    } catch (e) {
-      if (/HTTP 401|HTTP 403|HTTP 422/.test(e.message)) throw new FetchError('Brave rechazó la clave de API. Verifíquela en Configuración › Fuentes.', 'AUTH');
-      throw e;
+    const resp = await safeFetch(url, { ...opts, headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': cfg.key } });
+    if (resp.status >= 400) {
+      let detail = '';
+      try { detail = JSON.parse(resp.body.toString('utf8'))?.error?.detail || ''; } catch { /* sin cuerpo JSON */ }
+      const hint = {
+        401: 'Brave no reconoce la clave (HTTP 401). Cópiela de nuevo desde api-dashboard.search.brave.com › API Keys, sin espacios.',
+        403: 'La clave existe pero no tiene acceso (HTTP 403). Cree la clave dentro del producto "Web Search" (no "Data for AI").',
+        422: 'La clave es válida pero el plan no está activo (HTTP 422). En el panel de Brave › Subscriptions, suscriba el plan "Free" del producto "Data for Search / Web Search".',
+        429: 'Brave limitó las consultas (HTTP 429). Espere un minuto e intente de nuevo.',
+      }[resp.status] || `Brave respondió HTTP ${resp.status}.`;
+      throw new FetchError(detail ? `${hint} (Brave: ${detail})` : hint, 'AUTH');
     }
-    return (r.data?.web?.results || []).map((x) => ({
+    let data;
+    try { data = JSON.parse(resp.body.toString('utf8')); } catch { throw new FetchError('Brave devolvió una respuesta no válida.', 'PARSE'); }
+    return (data?.web?.results || []).map((x) => ({
       title: x.title, url: x.url, snippet: x.description || '', site: x.meta_url?.hostname?.replace(/^www\./, '') || host(x.url), date: x.page_age || x.age || null,
     }));
   }
