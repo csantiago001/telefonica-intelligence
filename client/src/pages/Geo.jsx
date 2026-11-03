@@ -11,7 +11,7 @@ const MapView = lazy(() => import('../components/MapView.jsx'));
 function CreateLinkModal({ initialCase, onClose, onCreated }) {
   const toast = useToast();
   const { setCredits } = useAuth();
-  const [f, setF] = useState({ caseId: initialCase ?? null, recipientLabel: '', purpose: '', expiresHours: 24, legalBasis: false });
+  const [f, setF] = useState({ caseId: initialCase ?? null, recipientLabel: '', purpose: '', expiresHours: 24, slug: '', legalBasis: false });
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState(null);
   const submit = async () => {
@@ -49,6 +49,7 @@ function CreateLinkModal({ initialCase, onClose, onCreated }) {
           <Field label="Vigencia"><select className="select" value={f.expiresHours} onChange={(e) => setF({ ...f, expiresHours: e.target.value })}>{[1, 6, 12, 24, 48, 72, 168].map((h) => <option key={h} value={h}>{h < 24 ? `${h} hora(s)` : `${h / 24} día(s)`}</option>)}</select></Field>
           <CaseSelect value={f.caseId} onChange={(caseId) => setF({ ...f, caseId })} />
         </div>
+        <Field label="Nombre del enlace (opcional)" help="Personaliza la parte final del enlace, por ejemplo ana-maria. Se añade un sufijo aleatorio por seguridad."><input className="input" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} maxLength={40} placeholder="ana-maria" /></Field>
         <label className="check"><input type="checkbox" checked={f.legalBasis} onChange={(e) => setF({ ...f, legalBasis: e.target.checked })} /><span>Confirmo que existe una finalidad legítima, que la persona será informada y que <b>no</b> usaré este enlace de forma engañosa ni para obtener la ubicación sin su conocimiento.</span></label>
       </div>
     </Modal>

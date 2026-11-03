@@ -109,3 +109,50 @@ export function phoneQueryVariants(analysis) {
   const out = [`"${f.international}"`, `"${national}"`, `"${digits}"`];
   return [...new Set(out)].filter((q) => q.replace(/\D/g, '').length >= 6);
 }
+
+// Sitios de redes y directorios públicos frecuentes (solo para enlaces de revisión manual).
+export const SOCIAL_SITES = [
+  { name: 'Facebook', host: 'facebook.com' }, { name: 'Instagram', host: 'instagram.com' }, { name: 'X (Twitter)', host: 'twitter.com' },
+  { name: 'LinkedIn', host: 'linkedin.com' }, { name: 'TikTok', host: 'tiktok.com' }, { name: 'YouTube', host: 'youtube.com' },
+  { name: 'Telegram', host: 't.me' }, { name: 'GitHub', host: 'github.com' },
+];
+
+/** Detecta el tipo de objetivo y genera variantes de búsqueda y enlaces asistidos. */
+export function subjectVariants(type, value) {
+  const v = String(value || '').trim();
+  const q = (s) => `"${s.replace(/"/g, '')}"`;
+  let queries = [];
+  let kind = type;
+  if (type === 'auto') {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) kind = 'correo';
+    else if (/^@?[a-zA-Z0-9._]{3,30}$/.test(v) && !v.includes(' ')) kind = 'usuario';
+    else kind = 'nombre';
+  }
+  if (kind === 'correo') {
+    const local = v.split('@')[0];
+    queries = [q(v), q(local)];
+  } else if (kind === 'usuario') {
+    const u = v.replace(/^@/, '');
+    queries = [q(u), q('@' + u)];
+  } else {
+    // nombre o texto libre
+    queries = [q(v)];
+    if (kind === 'nombre') queries.push(...SOCIAL_SITES.slice(0, 4).map((s) => `${q(v)} site:${s.host}`));
+  }
+  queries = [...new Set(queries)].filter(Boolean).slice(0, 6);
+  return { kind, queries };
+}
+
+export function assistedLinks(value, kind) {
+  const v = String(value || '').replace(/"/g, '').trim();
+  const enc = encodeURIComponent(`"${v}"`);
+  const engines = [
+    { engine: 'Google', url: `https://www.google.com/search?q=${enc}` },
+    { engine: 'Bing', url: `https://www.bing.com/search?q=${enc}` },
+    { engine: 'DuckDuckGo', url: `https://duckduckgo.com/?q=${enc}` },
+  ];
+  const social = (kind === 'usuario' || kind === 'nombre' || kind === 'correo')
+    ? SOCIAL_SITES.map((s) => ({ engine: s.name, url: `https://www.google.com/search?q=${encodeURIComponent(`"${v}" site:${s.host}`)}` }))
+    : [];
+  return { links: engines, social };
+}

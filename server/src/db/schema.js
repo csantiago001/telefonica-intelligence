@@ -304,4 +304,12 @@ CREATE TABLE alerts (
 );
 `,
   },
+  {
+    version: 2,
+    name: 'enlace legible para consentimiento de ubicación',
+    sql: `
+ALTER TABLE geo_links ADD COLUMN slug TEXT;
+CREATE UNIQUE INDEX idx_geo_slug ON geo_links(slug) WHERE slug IS NOT NULL;
+`,
+  },
 ];

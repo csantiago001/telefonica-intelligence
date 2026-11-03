@@ -6,7 +6,7 @@ import { getSetting } from '../lib/settings.js';
 import { ensureCredits, chargeCredits } from '../lib/credits.js';
 import { HttpError, parse, audit, pageSchema, paginate, jsonParse, toCsv, nextCode } from '../lib/util.js';
 import { requirePerm } from '../middleware/auth.js';
-import { TOOLS, validateTarget, runTool } from '../services/osint.js';
+import { TOOLS, validateTarget, runTool, runSubjectSearch } from '../services/osint.js';
 import { getSearchConfig } from '../services/websearch.js';
 
 const RELIABILITY = ['confirmado', 'probable', 'no_verificado'];
@@ -165,6 +165,46 @@ export default function investigationRoutes({ db, config }) {
     }
     audit(db, req, 'phone.investigated', { entity: 'phone_query', entityId: pqId, detail: { e164: a.e164, caseId, search: search?.status } });
     res.json({ analysis: { id: pqId, ...a }, search, caseId, caseCode, balance: db.get('SELECT credits FROM users WHERE id = ?', req.user.id).credits });
+  });
+
+  // ---------------- Investigación por nombre, correo o usuario ----------------
+  r.post('/investigate/subject', requirePerm('osint.query'), async (req, res) => {
+    const d = parse(z.object({
+      type: z.enum(['auto', 'nombre', 'correo', 'usuario']).default('auto'),
+      value: z.string().trim().min(2, 'Escriba el nombre, correo o usuario').max(160),
+      caseId: z.coerce.number().int().positive().nullable().optional(),
+      createCase: z.boolean().default(false),
+    }), req.body);
+    if ((getSetting(db, 'osint.sources') || {}).search === false) throw new HttpError(400, 'La búsqueda de información pública está desactivada en Configuración › Fuentes.');
+    let caseId = caseExists(d.caseId ?? null);
+    ensureCredits(db, req.user, 'osint_search');
+    let caseCode = caseId ? db.get('SELECT code FROM cases WHERE id = ?', caseId).code : null;
+    if (!caseId && d.createCase) {
+      if (!req.permissions.has('cases.write')) throw new HttpError(403, 'No tiene permiso para crear expedientes.');
+      db.tx(() => {
+        caseCode = nextCode(db, 'cases', 'TI');
+        caseId = db.run(
+          "INSERT INTO cases (code, title, description, objective, classification, priority, status, tags, opened_at, owner_id, created_by, is_demo, created_at, updated_at) VALUES (?, ?, ?, ?, 'verificacion', 'media', 'abierto', '[\"osint\"]', ?, ?, ?, ?, ?, ?)",
+          caseCode, `Investigación de ${d.value}`.slice(0, 200), `Expediente creado desde "Investigar" para el objetivo: ${d.value}.`,
+          'Recopilar información pública relacionada con el objetivo.', now(), req.user.id, req.user.id, config.isDemo ? 1 : 0, now(), now()
+        ).lastInsertRowid;
+        db.run('INSERT INTO case_events (case_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', caseId, 'creado', `Expediente ${caseCode} creado desde Investigar`, req.user.id, now());
+      });
+      audit(db, req, 'case.created', { entity: 'case', entityId: caseId, detail: { code: caseCode, from: 'investigate_subject' } });
+    }
+    const started = Date.now();
+    let out, error = null;
+    try { out = await runSubjectSearch(d.type, d.value, osintOpts()); if (out.status === 'fallido') error = out.data?.error; }
+    catch (e) { error = e.message; out = { status: 'fallido', data: null, findings: [], source: 'DuckDuckGo + búsqueda asistida' }; }
+    const oid = db.run(
+      'INSERT INTO osint_queries (tool, target, status, source, source_url, result, error, duration_ms, case_id, user_id, credits_used, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+      'search', d.value, out.status, out.source, out.sourceUrl || null, out.data ? JSON.stringify(out.data) : null, error, Date.now() - started, caseId, req.user.id, config.isDemo ? 1 : 0, now()
+    ).lastInsertRowid;
+    let cost = 0;
+    if (out.status !== 'fallido') { try { cost = chargeCredits(db, req.user, 'osint_search', `osint_query:${oid}`, config.isDemo); } catch { cost = 0; } db.run('UPDATE osint_queries SET credits_used = ? WHERE id = ?', cost, oid); }
+    caseEvent(caseId, 'consulta_osint', `Búsqueda pública de "${d.value}" → ${out.status}`, req.user.id);
+    audit(db, req, 'osint.query', { entity: 'osint_query', entityId: oid, detail: { tool: 'subject', value: d.value, status: out.status }, severity: out.status === 'fallido' ? 'warning' : 'info' });
+    res.json({ search: { id: oid, status: out.status, source: out.source, data: out.data, suggestedFindings: out.findings || [], error, durationMs: Date.now() - started, creditsUsed: cost, consultedAt: now() }, caseId, caseCode, balance: db.get('SELECT credits FROM users WHERE id = ?', req.user.id).credits });
   });
 
   // ---------------- OSINT ----------------

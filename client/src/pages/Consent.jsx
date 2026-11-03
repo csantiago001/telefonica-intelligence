@@ -53,23 +53,20 @@ export default function Consent() {
           {!info && !error && <Loading />}
           {info && <>
             {info.isDemo && <div className="demo-banner" style={{ borderRadius: 8 }}>DEMOSTRACIÓN · DATOS FICTICIOS</div>}
-            <div>
-              <div className="eyebrow"><ShieldCheck size={13} /> Solicitud de ubicación con consentimiento</div>
-              <h1>{info.organization} solicita que comparta su ubicación</h1>
-              <div className="row mt" style={{ gap: 8 }}><GeoStatusBadge value={info.status} /><span className="small muted"><Clock size={13} style={{ verticalAlign: -2 }} /> Vence: {fmtDateTime(info.expiresAt)}</span></div>
-            </div>
-            <div className="alert info" style={{ display: 'block' }}><b>Finalidad:</b> {info.purpose}</div>
-            <div>
-              <h3 className="mb" style={{ marginBottom: 8 }}>Información sobre el tratamiento de sus datos</h3>
-              <div className="consent-text">{info.consentText}</div>
+            <div style={{ textAlign: 'center' }}>
+              <div className="eyebrow" style={{ justifyContent: 'center' }}><ShieldCheck size={13} /> Solicitud de ubicación</div>
+              <h1 style={{ fontSize: 22 }}>Para continuar, comparte tu ubicación</h1>
+              <p className="muted mt" style={{ marginTop: 8 }}><b>{info.organization}</b> la solicita para: {info.purpose}</p>
             </div>
             {msg && <div className={`alert ${msg.type}`}>{msg.type === 'success' ? <CheckCircle2 size={18} color="var(--lime)" /> : <XCircle size={18} color="var(--red)" />}<div>{msg.text}</div></div>}
             {(info.status === 'pendiente' || info.status === 'activo') && <>
-              <label className="check"><input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /><span>He leído la información anterior y <b>acepto de forma libre, expresa e informada</b> compartir mi ubicación actual para la finalidad indicada.</span></label>
-              <div className="row">
-                <button className="btn primary" disabled={!accepted || busy} onClick={share}>{busy ? <Spinner /> : <MapPin size={16} />} {info.sharedCount ? 'Compartir de nuevo' : 'Compartir mi ubicación'}</button>
-                <span className="small muted">Su navegador le pedirá permiso. Puede negarlo.</span>
-              </div>
+              <label className="check" style={{ justifyContent: 'center' }}><input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /><span>Acepto compartir mi ubicación de forma libre e informada.</span></label>
+              <button className="btn primary block" style={{ height: 48, fontSize: 16 }} disabled={!accepted || busy} onClick={share}>{busy ? <Spinner /> : <MapPin size={18} />} {info.sharedCount ? 'Compartir de nuevo' : 'Aceptar y compartir'}</button>
+              <details className="small muted" style={{ textAlign: 'center' }}>
+                <summary style={{ cursor: 'pointer' }}>Ver detalle del tratamiento de datos</summary>
+                <div className="consent-text mt" style={{ textAlign: 'left' }}>{info.consentText}</div>
+                <div className="row mt" style={{ gap: 8, justifyContent: 'center' }}><GeoStatusBadge value={info.status} /><span><Clock size={12} style={{ verticalAlign: -2 }} /> Vence: {fmtDateTime(info.expiresAt)}</span></div>
+              </details>
             </>}
             {info.status === 'expirado' && <div className="alert warning">Este enlace expiró. No es posible compartir la ubicación.</div>}
             {info.status === 'revocado' && <div className="alert warning">El consentimiento fue revocado el {fmtDateTime(info.revokedAt)}.</div>}

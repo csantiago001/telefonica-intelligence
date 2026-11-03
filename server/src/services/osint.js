@@ -4,7 +4,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { safeFetch, fetchJson, FetchError } from '../lib/safeHttp.js';
 import { analyzePhone } from '../lib/phone.js';
-import { searchWeb, phoneQueryVariants } from './websearch.js';
+import { searchWeb, phoneQueryVariants, subjectVariants, assistedLinks } from './websearch.js';
 
 export const DOMAIN_RE = /^(?=.{1,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/i;
 
@@ -303,6 +303,33 @@ async function runSearch(query, opts) {
   const status = !anyOk ? 'fallido' : (webError || instantError) ? 'parcial' : anyResult ? 'exito' : 'sin_resultados';
   if (status === 'fallido') data.error = webError || instantError;
   return { status, data, findings, sourceUrl: web?.results[0]?.url ? null : `https://duckduckgo.com/?q=${encodeURIComponent(query)}`, source: web ? `${web.providerLabel} + DuckDuckGo` : undefined };
+}
+
+// Búsqueda por nombre, correo o usuario (no es un número telefónico).
+export async function runSubjectSearch(type, value, opts) {
+  const { kind, queries } = subjectVariants(type, value);
+  const assisted = assistedLinks(value, kind);
+  let web = null, webError = null;
+  if (opts.searchApi) {
+    try { web = await searchWeb(opts.searchApi, queries, opts); } catch (e) { webError = e.message; }
+  }
+  let instant = null, instantError = null;
+  try {
+    const r = await fetchJson(`https://api.duckduckgo.com/?q=${encodeURIComponent(value)}&format=json&no_html=1&skip_disambig=1&no_redirect=1`, opts);
+    const d = r.data || {};
+    const topics = [];
+    for (const t of d.RelatedTopics || []) { if (t.Text) topics.push({ text: t.Text, url: t.FirstURL }); for (const s2 of t.Topics || []) if (s2.Text) topics.push({ text: s2.Text, url: s2.FirstURL }); }
+    instant = { heading: d.Heading || null, abstract: d.AbstractText || null, abstractSource: d.AbstractSource || null, abstractUrl: d.AbstractURL || null, topics: topics.slice(0, 20) };
+  } catch (e) { instantError = e.message; }
+  const hasInstant = instant && (instant.abstract || instant.topics.length);
+  const findings = [];
+  if (web) for (const r of web.results.slice(0, 20)) findings.push({ title: `${r.site}: ${r.title}`.slice(0, 280), detail: `${r.snippet}\n${r.url}`, url: r.url });
+  if (hasInstant && instant.abstract) findings.push({ title: `Resumen público: ${instant.heading || value}`, detail: instant.abstract, url: instant.abstractUrl });
+  const anyOk = !!web || !instantError;
+  const anyResult = (web && web.results.length > 0) || hasInstant;
+  const status = !anyOk ? 'fallido' : (webError || instantError) ? 'parcial' : anyResult ? 'exito' : 'sin_resultados';
+  const data = { query: value, kind, web, webError, webConfigured: !!opts.searchApi, instant, instantError, assisted: { links: [...assisted.links, ...assisted.social] }, error: status === 'fallido' ? (webError || instantError) : undefined };
+  return { status, data, findings, source: web ? `${web.providerLabel} + DuckDuckGo` : 'DuckDuckGo + búsqueda asistida', sourceUrl: null };
 }
 
 const RUNNERS = { dns: runDns, rdap: runRdap, ct: runCt, wayback: runWayback, link: runLink, ip: runIp, search: runSearch };

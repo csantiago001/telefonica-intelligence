@@ -62,20 +62,24 @@ export function geoRoutes({ db, config }) {
       recipientLabel: z.string().trim().min(2, 'Indique a quién se envía').max(120),
       purpose: z.string().trim().min(10, 'Describa la finalidad (mínimo 10 caracteres)').max(500),
       expiresHours: z.coerce.number().int().min(1).max(maxH, `Máximo ${maxH} horas`),
+      slug: z.string().trim().max(40).optional().default(''),
       legalBasis: z.literal(true, { message: 'Debe confirmar que la persona será informada y que existe una finalidad legítima' }),
     }), req.body);
     if (d.caseId && !db.get('SELECT id FROM cases WHERE id = ?', d.caseId)) throw new HttpError(400, 'El expediente no existe.');
     ensureCredits(db, req.user, 'geo_link');
     const token = randomToken(24);
+    // Enlace legible opcional: el texto elegido + un sufijo aleatorio (mantiene el enlace imposible de adivinar).
+    const base = d.slug.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+    const slug = (base ? base + '-' : '') + randomToken(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 7).padEnd(7, 'a');
     const expires = new Date(Date.now() + d.expiresHours * 3600_000).toISOString();
     const id = db.run(
-      'INSERT INTO geo_links (token_hash, token_hint, case_id, recipient_label, purpose, status, expires_at, created_by, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      sha256(token), token.slice(0, 6), d.caseId ?? null, d.recipientLabel, d.purpose, 'pendiente', expires, req.user.id, config.isDemo ? 1 : 0, now()
+      'INSERT INTO geo_links (token_hash, token_hint, slug, case_id, recipient_label, purpose, status, expires_at, created_by, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      sha256(token), token.slice(0, 6), slug, d.caseId ?? null, d.recipientLabel, d.purpose, 'pendiente', expires, req.user.id, config.isDemo ? 1 : 0, now()
     ).lastInsertRowid;
     chargeCredits(db, req.user, 'geo_link', `geo_link:${id}`, config.isDemo);
     caseEvent(d.caseId, `Enlace de ubicación con consentimiento generado para ${d.recipientLabel} (vence ${expires.slice(0, 16).replace('T', ' ')})`, req.user.id);
     audit(db, req, 'geo.link_created', { entity: 'geo_link', entityId: id, detail: { recipient: d.recipientLabel, caseId: d.caseId ?? null, expires } });
-    res.status(201).json({ id, path: `/consentimiento/${token}`, publicUrl: config.publicUrl ? `${config.publicUrl}/consentimiento/${token}` : null, expiresAt: expires });
+    res.status(201).json({ id, path: `/consentimiento/${slug}`, publicUrl: config.publicUrl ? `${config.publicUrl}/consentimiento/${slug}` : null, expiresAt: expires });
   });
 
   r.get('/links/:id', requirePerm('geo.read'), (req, res) => {
@@ -120,8 +124,9 @@ export function publicConsentRoutes({ db, config }) {
   const r = Router();
   r.use(rateLimit({ windowMs: 60_000, max: config.isTest ? 1000 : 30, key: 'consent' }));
   const load = (token) => {
-    if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) throw new HttpError(404, 'Enlace no válido.');
-    const l = db.get('SELECT * FROM geo_links WHERE token_hash = ?', sha256(token));
+    if (!/^[A-Za-z0-9_-]{6,64}$/.test(token)) throw new HttpError(404, 'Enlace no válido.');
+    // Enlaces legibles (slug) o tokens antiguos (hash).
+    const l = db.get('SELECT * FROM geo_links WHERE slug = ?', token) || db.get('SELECT * FROM geo_links WHERE token_hash = ?', sha256(token));
     if (!l) throw new HttpError(404, 'Enlace no válido o eliminado.');
     return l;
   };

@@ -12,7 +12,7 @@ import { fmtNum, timeAgo } from '../lib/format.js';
 const NAV = [
   { section: 'Operación' },
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', end: true },
-  { to: '/investigar', label: 'Investigar número', icon: ScanSearch, perm: 'phone.analyze' },
+  { to: '/investigar', label: 'Investigar', icon: ScanSearch, perm: 'phone.analyze' },
   { to: '/analisis', label: 'Análisis telefónico', icon: Phone, perm: 'phone.history' },
   { to: '/osint', label: 'OSINT', icon: Radar, perm: 'osint.history' },
   { to: '/hallazgos', label: 'Hallazgos', icon: Lightbulb, perm: 'osint.history' },

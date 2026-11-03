@@ -391,8 +391,11 @@ describe('Geolocalización con consentimiento', () => {
     const r = await admin.post('/api/geo/links').send({ recipientLabel: 'Ana (prueba)', purpose: 'Confirmar que está a salvo', expiresHours: 24, legalBasis: true });
     assert.equal(r.status, 201);
     link = r.body; token = r.body.path.split('/').pop();
-    const stored = ctx.db.get('SELECT token_hash FROM geo_links WHERE id = ?', link.id).token_hash;
-    assert.equal(stored, sha256(token), 'solo se guarda el hash del token');
+    // El enlace público es el slug legible; el token secreto nunca se expone y se guarda como hash.
+    const row = ctx.db.get('SELECT token_hash, slug FROM geo_links WHERE id = ?', link.id);
+    assert.equal(row.slug, token, 'el enlace público usa el slug legible');
+    assert.notEqual(row.token_hash, token);
+    assert.match(row.token_hash, /^[0-9a-f]{64}$/, 'el token se guarda como hash SHA-256');
   });
   test('página pública muestra consentimiento sin datos internos', async () => {
     const r = await request(ctx.app).get(`/api/public/consent/${token}`);
@@ -531,5 +534,40 @@ describe('Investigar número y buscador web', () => {
     const t = await admin.post('/api/settings/search/test');
     assert.equal(t.body.ok, false, 'sin Internet o con clave falsa la prueba debe fallar, nunca simular');
     await admin.put('/api/settings/search').send({ provider: 'none' });
+  });
+});
+
+describe('Investigar por nombre/correo/usuario y enlace legible', () => {
+  test('búsqueda por nombre crea expediente y registra la consulta', async () => {
+    const r = await admin.post('/api/investigate/subject').send({ type: 'nombre', value: 'Juan Pérez Ejemplo', createCase: true });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.match(r.body.caseCode, /^TI-/);
+    assert.ok(r.body.search);
+    // sin clave de buscador, siempre hay enlaces asistidos (incluye redes sociales)
+    assert.ok(r.body.search.data.assisted.links.length >= 3);
+    assert.equal(r.body.search.data.webConfigured, false);
+    if (r.body.search.status === 'fallido') assert.equal(r.body.search.creditsUsed, 0);
+    const c = (await admin.get(`/api/cases/${r.body.caseId}`)).body;
+    assert.equal(c.osintQueries.length, 1);
+  });
+  test('detección automática de tipo (correo y usuario)', async () => {
+    const e = await admin.post('/api/investigate/subject').send({ type: 'auto', value: 'persona@example.com' });
+    assert.equal(e.status, 200);
+    assert.equal(e.body.search.data.kind, 'correo');
+    const u = await admin.post('/api/investigate/subject').send({ type: 'auto', value: '@usuario_x' });
+    assert.equal(u.body.search.data.kind, 'usuario');
+  });
+  test('valores inválidos se rechazan', async () => {
+    assert.equal((await admin.post('/api/investigate/subject').send({ type: 'nombre', value: 'a' })).status, 400);
+  });
+  test('enlace de ubicación con nombre legible y sufijo aleatorio', async () => {
+    const r = await admin.post('/api/geo/links').send({ recipientLabel: 'Ana María', purpose: 'Confirmar que está a salvo', expiresHours: 24, slug: 'Ana María!!', legalBasis: true });
+    assert.equal(r.status, 201);
+    assert.match(r.body.path, /^\/consentimiento\/ana-maria-[a-z0-9]{1,7}$/, r.body.path);
+    const slug = r.body.path.split('/').pop();
+    // Accesible por el enlace legible
+    const pub = await request(ctx.app).get(`/api/public/consent/${slug}`);
+    assert.equal(pub.status, 200);
+    assert.equal(pub.body.status, 'pendiente');
   });
 });
