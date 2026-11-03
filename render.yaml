@@ -1,16 +1,22 @@
-# Plantilla para desplegar el ENTORNO DE DEMOSTRACIÓN (datos ficticios) en Render.com.
-# Requiere una cuenta del usuario y su autorización expresa. No contiene secretos.
+# Blueprint de Render.com para el ENTORNO DE DEMOSTRACIÓN (solo datos ficticios, plan gratuito).
+# No contiene secretos. Los datos se regeneran en cada arranque.
 services:
   - type: web
     name: telefonica-intelligence-demo
-    runtime: docker
+    runtime: node
     plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:demo
     healthCheckPath: /api/health
     envVars:
+      - key: NODE_VERSION
+        value: "22.23.4"
       - key: APP_MODE
         value: demo
-      - key: PORT
-        value: 8080
+      - key: HOST
+        value: 0.0.0.0
       - key: TRUST_PROXY
         value: "true"
       - key: COOKIE_SECURE

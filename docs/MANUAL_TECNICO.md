@@ -106,7 +106,16 @@ docker run -d -p 8080:8080 -v ti-data:/app/data --env-file .env telefonica-intel
 
 ## 6. Entorno de demostración web
 
-`render.yaml` describe un servicio Docker con `APP_MODE=demo` (datos ficticios, base efímera, cargas de 1 MB, sin copias de seguridad). Requiere una cuenta del propietario en el proveedor. **No use GitHub Pages**: no ejecuta el backend Node.js.
+`render.yaml` es un *Blueprint* de Render.com (plan gratuito, runtime Node) con `APP_MODE=demo`: datos ficticios, base efímera, cargas de 1 MB, sin copias de seguridad. **No use GitHub Pages**: no ejecuta el backend Node.js.
+
+Pasos (los realiza el propietario de la cuenta):
+
+1. Cree una cuenta en <https://render.com> (puede ingresar con GitHub).
+2. *New → Blueprint* y autorice a Render a leer el repositorio `telefonica-intelligence`.
+3. Render detecta `render.yaml`; confirme con *Apply*. La primera compilación tarda unos minutos.
+4. La URL pública tendrá la forma `https://telefonica-intelligence-demo.onrender.com`. Configure esa URL en la variable `PUBLIC_URL` del servicio para que los enlaces de consentimiento usen HTTPS.
+
+En el plan gratuito el servicio se suspende tras ~15 min sin tráfico y tarda en despertar; cada reinicio regenera los datos de demostración. **Nunca** despliegue el modo privado con datos reales en un servicio público sin evaluarlo primero.
 
 ## 7. Copias de seguridad y restauración
 
