@@ -8,7 +8,7 @@ import { now } from '../db/database.js';
 const cutoff = (days) => new Date(Date.now() - days * 864e5).toISOString();
 
 /** Calcula (dryRun) o ejecuta la purga según las políticas de conservación. */
-export function runRetention(db, config, { dryRun = false } = {}) {
+export async function runRetention(db, config, { dryRun = false, storage = null } = {}) {
   const pq = Number(getSetting(db, 'retention.phone_queries_days')) || 0;
   const oq = Number(getSetting(db, 'retention.osint_queries_days')) || 0;
   const geo = Number(getSetting(db, 'retention.geo_days')) || 0;
@@ -22,6 +22,7 @@ export function runRetention(db, config, { dryRun = false } = {}) {
     closed_cases: cc ? db.get("SELECT COUNT(*) n FROM cases WHERE status IN ('cerrado','archivado') AND closed_at < ?", cutoff(cc)).n : 0,
   };
   if (dryRun) return plan;
+  const filesToRemove = [];
   db.tx(() => {
     if (pq) db.run('DELETE FROM phone_queries WHERE created_at < ?', cutoff(pq));
     if (oq) db.run('DELETE FROM osint_queries WHERE created_at < ?', cutoff(oq));
@@ -30,7 +31,7 @@ export function runRetention(db, config, { dryRun = false } = {}) {
     if (cc) {
       const ids = db.all("SELECT id FROM cases WHERE status IN ('cerrado','archivado') AND closed_at < ?", cutoff(cc)).map((r) => r.id);
       for (const id of ids) {
-        for (const e of db.all('SELECT storage_name FROM evidence WHERE case_id = ? AND deleted_at IS NULL', id)) secureDelete(path.join(config.evidenceDir, e.storage_name));
+        for (const e of db.all('SELECT storage_name FROM evidence WHERE case_id = ? AND deleted_at IS NULL', id)) filesToRemove.push(e.storage_name);
         db.run('UPDATE evidence SET deleted_at = ? WHERE case_id = ? AND deleted_at IS NULL', now(), id);
         db.run('DELETE FROM cases WHERE id = ?', id);
       }
@@ -41,6 +42,10 @@ export function runRetention(db, config, { dryRun = false } = {}) {
     db.run('DELETE FROM password_resets WHERE expires_at < ?', cutoff(7));
     db.run('DELETE FROM alerts WHERE read_at IS NOT NULL AND read_at < ?', cutoff(90));
   });
+  // Borrado de los archivos de evidencia fuera de la transacción (puede ser remoto en R2).
+  for (const name of filesToRemove) {
+    try { if (storage) await storage.remove('evidencias', name); else secureDelete(path.join(config.evidenceDir, name)); } catch { /* continúa */ }
+  }
   // Archivos temporales huérfanos de cargas interrumpidas.
   const tmp = path.join(config.dataDir, 'tmp');
   if (fs.existsSync(tmp)) for (const f of fs.readdirSync(tmp)) {
@@ -51,11 +56,12 @@ export function runRetention(db, config, { dryRun = false } = {}) {
   return plan;
 }
 
-export function startScheduler(db, config, log = console) {
-  const tick = () => {
+export function startScheduler(db, config, log = console, storage = null) {
+  const tick = async () => {
     try {
-      runRetention(db, config);
-      if (!config.isDemo && getSetting(db, 'backup.auto_daily')) {
+      await runRetention(db, config, { storage });
+      // Las copias automáticas locales solo aplican con almacenamiento local (en la nube persiste R2 + Litestream).
+      if (!config.isDemo && config.storage !== 'r2' && getSetting(db, 'backup.auto_daily')) {
         const last = db.get("SELECT value FROM settings WHERE key = 'backup.last_auto'");
         const lastTs = last ? JSON.parse(last.value) : null;
         if (!lastTs || Date.now() - Date.parse(lastTs) > 23 * 3600_000) {

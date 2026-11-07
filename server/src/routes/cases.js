@@ -14,7 +14,7 @@ export const CASE_CLASS = ['general', 'fraude', 'extorsion', 'suplantacion', 'ac
 export const CASE_PRIORITY = ['baja', 'media', 'alta', 'critica'];
 const ENTITY_KIND = ['persona', 'organizacion', 'dominio', 'cuenta', 'otro'];
 
-export default function caseRoutes({ db, config }) {
+export default function caseRoutes({ db, config, storage }) {
   const r = Router();
   const event = (caseId, type, detail, userId) =>
     db.run('INSERT INTO case_events (case_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', caseId, type, detail, userId, now());
@@ -139,7 +139,7 @@ export default function caseRoutes({ db, config }) {
     res.json({ ok: true });
   });
 
-  r.delete('/:id', requirePerm('cases.delete'), (req, res) => {
+  r.delete('/:id', requirePerm('cases.delete'), async (req, res) => {
     const c = getCase(req.params.id);
     const d = parse(z.object({ confirmCode: z.string() }), req.body);
     if (d.confirmCode !== c.code) throw new HttpError(400, `Para confirmar escriba el código exacto del expediente (${c.code}).`);
@@ -148,7 +148,7 @@ export default function caseRoutes({ db, config }) {
       db.run('UPDATE evidence SET deleted_at = ? WHERE case_id = ? AND deleted_at IS NULL', now(), c.id);
       db.run('DELETE FROM cases WHERE id = ?', c.id);
     });
-    for (const f of files) secureDelete(path.join(config.evidenceDir, f.storage_name));
+    for (const f of files) { try { await storage.remove('evidencias', f.storage_name); } catch { /* continúa */ } }
     audit(db, req, 'case.deleted', { entity: 'case', entityId: c.id, detail: { code: c.code, evidenceFilesDeleted: files.length }, severity: 'critical' });
     res.json({ ok: true });
   });

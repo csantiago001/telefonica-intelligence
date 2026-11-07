@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { openDatabase } from './db/database.js';
+import { createStorage } from './lib/storage.js';
 import { DEFAULT_ROLES } from './lib/permissions.js';
 import { HttpError } from './lib/util.js';
 import { sessionLoader, requireAuth, csrfProtection } from './middleware/auth.js';
@@ -80,7 +81,8 @@ export function createApp(config, { db: providedDb, logger = console } = {}) {
   app.use('/api', rateLimit({ windowMs: 60_000, max: config.isTest ? 100000 : 600, key: 'api' }));
   app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
-  const ctx = { db, config, startedAt, version };
+  const storage = createStorage(config);
+  const ctx = { db, config, storage, startedAt, version };
   app.get('/api/health', (req, res) => {
     db.get('SELECT 1 ok');
     res.json({ status: 'ok', mode: config.mode, version, time: new Date().toISOString() });
@@ -119,5 +121,5 @@ export function createApp(config, { db: providedDb, logger = console } = {}) {
     res.status(500).json({ error: 'Error interno del servidor. Se registró el incidente.' });
   });
 
-  return { app, db };
+  return { app, db, storage };
 }

@@ -17,12 +17,12 @@ if (config.isDemo && process.env.DEMO_RESET_ON_START !== 'false') {
   fs.rmSync(config.dataDir, { recursive: true, force: true });
 }
 
-const { app, db } = createApp(config);
+const { app, db, storage } = createApp(config);
 if (config.isDemo) {
   const r = await seedDemo(db, config);
   if (r) console.log(`[demo] Datos ficticios cargados: ${r.cases} expedientes, ${r.phoneQueries} análisis.`);
 }
-const stop = startScheduler(db, config);
+const stop = startScheduler(db, config, console, storage);
 
 const server = app.listen(config.port, config.host, () => {
   const url = `http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`;

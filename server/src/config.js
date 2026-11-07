@@ -62,5 +62,19 @@ export function loadConfig(overrides = {}) {
     osintTimeoutMs: Number(env.OSINT_TIMEOUT_MS || 10000),
     clientDist: path.join(ROOT_DIR, 'client', 'dist'),
     allowPrivateNetworkFetch: env.ALLOW_PRIVATE_FETCH === 'true',
+    // Almacenamiento de archivos: 'local' (disco) o 'r2' (Cloudflare R2, para la nube).
+    storage: env.STORAGE === 'r2' ? 'r2' : 'local',
+    r2: env.STORAGE === 'r2' ? validateR2(env) : null,
   };
+}
+
+function validateR2(env) {
+  const account = env.R2_ACCOUNT_ID;
+  const bucket = env.R2_BUCKET;
+  const accessKey = env.R2_ACCESS_KEY_ID;
+  const secretKey = env.R2_SECRET_ACCESS_KEY;
+  if (!account || !bucket || !accessKey || !secretKey) {
+    throw new Error('STORAGE=r2 requiere R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY.');
+  }
+  return { host: env.R2_ENDPOINT || `${account}.r2.cloudflarestorage.com`, bucket, accessKey, secretKey, region: env.R2_REGION || 'auto' };
 }

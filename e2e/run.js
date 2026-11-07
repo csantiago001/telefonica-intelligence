@@ -175,10 +175,10 @@ async function main() {
     const c2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const p2 = await c2.newPage();
     await p2.goto(consentUrl);
-    await p2.waitForSelector('text=solicita que comparta su ubicación');
-    expect(await p2.isDisabled('button:has-text("Compartir mi ubicación")'), 'sin aceptar el botón debe estar deshabilitado');
+    await p2.waitForSelector('text=comparte tu ubicación');
+    expect(await p2.isDisabled('button:has-text("Aceptar y compartir")'), 'sin aceptar el botón debe estar deshabilitado');
     await p2.check('input[type=checkbox]');
-    await p2.click('button:has-text("Compartir mi ubicación")');
+    await p2.click('button:has-text("Aceptar y compartir")');
     await p2.waitForSelector('text=/no concedió el permiso|No fue posible determinar/', { timeout: 15000 });
     await c2.close();
   });
@@ -187,7 +187,7 @@ async function main() {
     const p2 = await c2.newPage();
     await p2.goto(consentUrl);
     await p2.check('input[type=checkbox]');
-    await p2.click('button:has-text("Compartir mi ubicación")');
+    await p2.click('button:has-text("Aceptar y compartir")');
     await p2.waitForSelector('text=Ubicación enviada', { timeout: 15000 });
     await p2.screenshot({ path: path.join(shots, 'consentimiento-movil.png'), fullPage: true });
     expect(await noHorizontalOverflow(p2), 'desbordamiento horizontal en móvil');

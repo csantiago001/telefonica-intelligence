@@ -1,60 +1,89 @@
-# Publicar la plataforma en Internet (acceso desde cualquier dispositivo)
+# Publicar la plataforma en Internet (permanente, sin tu PC, gratis)
 
-Telefónica Intelligence tiene servidor, base de datos y archivos cifrados. Por eso,
-a diferencia de una página estática, necesita un alojamiento que **ejecute Node.js**
-y **guarde datos de forma permanente**. Estas son las opciones.
+Esta guía deja la plataforma funcionando en Internet **sin depender de tu computador
+ni de una IP**, usando **Cloudflare R2** (gratis) para los datos y **Render** (plan
+gratuito) para ejecutarla.
 
-## Resumen de opciones
+## Cómo queda la arquitectura
 
-| Opción | Acceso desde cualquier dispositivo | Datos permanentes | Costo | Para qué sirve |
-|---|---|---|---|---|
-| **A. Local con túnel** (`iniciar-publico.bat`) | Sí, mientras su PC esté encendida | Sí (en su PC) | Gratis | Uso real sin servidor; la dirección cambia al reiniciar |
-| **B. Demo en Render** | Sí, siempre | **No** (se borran al reiniciar) | Gratis | Mostrar la plataforma con datos ficticios |
-| **C. Privado en Render** | Sí, siempre | Sí (disco persistente) | De pago (~7 USD/mes) | Uso real permanente, como un sitio web normal |
-| **D. Servidor propio (VPS)** | Sí, siempre | Sí | De pago (~4–6 USD/mes) | Máximo control; requiere conocimientos técnicos |
+```
+   Cualquier celular / computador
+              │  https://telefonica-intelligence-xxxx.onrender.com
+              ▼
+   ┌─────────────────────────┐        ┌──────────────────────────┐
+   │  Render (plan gratuito) │        │     Cloudflare R2        │
+   │  - App Node (SQLite)    │──────► │  - Base de datos (copia  │
+   │  - Litestream respalda  │        │    continua, Litestream) │
+   │    la base a R2         │        │  - Evidencias e informes │
+   └─────────────────────────┘        └──────────────────────────┘
+```
 
-> Igual que "toxicofit" vive en un servidor y no en su computador, para no depender de
-> su PC necesita la opción **C** o **D**. La diferencia de precio con una página normal
-> es que aquí se guardan datos (base de datos y evidencias), y eso requiere un plan con
-> disco permanente.
+- La base de datos se **respalda en tiempo real** en R2 y se restaura al arrancar:
+  aunque Render reinicie o "duerma", los datos siguen ahí.
+- Las evidencias e informes se guardan **directamente en R2**.
+- Resultado: permanente, accesible desde cualquier dispositivo, **sin costo**.
 
-## Opción C — Privado en Render (recomendada para uso real)
+> Único inconveniente del plan gratuito: si nadie la usa por ~15 min, "se duerme";
+> la primera visita después tarda ~30 s en despertar. Las siguientes van normales.
+> Si algún día quieres que esté siempre despierta, Render tiene un plan de ~7 USD/mes.
 
-Paso a paso (lo hace usted con su cuenta; yo no puedo contratar servicios):
+## Parte 1 — Cloudflare R2 (una sola vez)
 
-1. Cree una cuenta en <https://render.com> (puede entrar con GitHub).
-2. En el proyecto, copie `deploy/render-privado.yaml` a la raíz con el nombre
-   `render.yaml` (reemplaza al de demostración). Si no sabe hacerlo, dígame y se lo dejo listo.
-3. En Render: **New → Blueprint** y elija el repositorio `telefonica-intelligence`.
-4. Render le pedirá **MASTER_KEY**: pegue la misma de su `.env` local (o genere una
-   nueva de 64 caracteres hexadecimales y **guárdela**; sin ella no se descifran los datos).
-5. Aplique. La primera compilación tarda unos minutos.
-6. Render le dará una URL `https://telefonica-intelligence-xxxx.onrender.com`.
-   Cópiela y póngala en la variable `PUBLIC_URL` del servicio (para que los enlaces
-   de ubicación usen esa dirección).
-7. Abra la URL desde cualquier dispositivo y cree su usuario administrador.
+1. Entra a <https://dash.cloudflare.com> → **R2**. Si te pide activar R2, actívalo
+   (el plan gratuito da 10 GB; puede pedir una tarjeta para verificación, no cobra).
+2. **Create bucket** → nombre: `telefonica` → crear.
+3. Ve a **R2 → Manage R2 API Tokens → Create API Token**:
+   - Permiso: **Object Read & Write**.
+   - Aplícalo al bucket `telefonica`.
+   - Crear. **Copia y guarda** estos tres datos (no se vuelven a mostrar):
+     - **Access Key ID**
+     - **Secret Access Key**
+     - El **Account ID** (aparece en la página principal de R2, a la derecha).
 
-Costo: el plan `starter` con disco de 1 GB. Consulte el precio vigente en Render antes
-de aplicar. El plan gratuito **no** sirve para datos reales porque los borra en cada reinicio.
+## Parte 2 — Render (una sola vez)
 
-## Opción D — Servidor propio (VPS)
+1. Entra a <https://render.com> y regístrate con tu cuenta de GitHub.
+2. **New → Blueprint**. Autoriza a Render a ver el repositorio `telefonica-intelligence`.
+3. Render detecta `render.yaml` y pedirá estos valores (todos marcados como secretos):
 
-Para quien quiere control total y menor costo mensual. Resumen (detalle en el Manual técnico §5):
+   | Campo | Qué poner |
+   |---|---|
+   | **MASTER_KEY** | 64 caracteres hexadecimales. Genérala (ver abajo) y **guárdala aparte**. |
+   | **R2_ACCOUNT_ID** | El Account ID de Cloudflare. |
+   | **R2_BUCKET** | `telefonica` |
+   | **R2_ACCESS_KEY_ID** | El Access Key ID de R2. |
+   | **R2_SECRET_ACCESS_KEY** | El Secret Access Key de R2. |
+   | **PUBLIC_URL** | Déjalo vacío por ahora; se completa en el paso 5. |
 
-1. Contrate un VPS pequeño (p. ej. Hetzner CX22 o DigitalOcean, con Ubuntu).
-2. Instale Node.js 22, clone el repositorio, cree el `.env` y ejecute `npm run setup`.
-3. Ponga un proxy inverso con HTTPS (Caddy da certificado automático) apuntando a un
-   dominio suyo, y configure la app como servicio (systemd) para que arranque sola.
-4. Resultado: una dirección fija `https://su-dominio.com`, siempre disponible.
+   Para generar la MASTER_KEY: en Windows, abra PowerShell y ejecute
+   `-join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })`,
+   o pídamela y se la genero.
 
-Puedo dejarle los comandos exactos cuando elija el proveedor.
+4. **Apply**. La primera construcción tarda unos minutos.
+5. Cuando termine, Render muestra la URL (por ejemplo
+   `https://telefonica-intelligence-xxxx.onrender.com`). Cópiala, ve a
+   **Environment** del servicio, pon esa URL en **PUBLIC_URL** y guarda (se reinicia solo).
+6. Abre esa URL desde cualquier dispositivo y crea tu usuario administrador.
 
-## Protección de datos (importante en C y D)
+¡Listo! La plataforma ya vive en Internet, con tus datos guardados en Cloudflare.
 
-Al poner la plataforma en Internet, usted se vuelve responsable de los datos personales
-que almacene. Recomendaciones mínimas:
+## Seguridad (importante)
 
-- Active la **verificación en dos pasos** para todas las cuentas.
-- Guarde la **MASTER_KEY** en un lugar seguro y fuera del servidor.
-- Haga **copias de seguridad** periódicas (se descargan desde Configuración) y guárdelas aparte.
-- Use solo fuentes públicas y el consentimiento informado, como exige la plataforma.
+- Activa la **verificación en dos pasos** (Configuración → Seguridad) para todas las cuentas.
+- Guarda la **MASTER_KEY** en un lugar seguro y fuera de Render/Cloudflare. Sin ella no se
+  descifran las evidencias ni la base restaurada.
+- Los datos personales que almacenes quedan bajo tu responsabilidad (Ley 1581 de 2012).
+
+## Qué NO se pudo probar automáticamente (requiere tus credenciales reales)
+
+El código de almacenamiento en R2 se probó contra un servidor simulado y la **firma S3
+se validó contra el vector oficial de AWS** (es correcta). Pero la construcción de la
+imagen Docker, Litestream y la conexión real a tu R2 **se validan al desplegar**, porque
+necesitan tus credenciales. Si algún paso falla en Render, cópiame el registro (Logs) y
+lo corrijo.
+
+## Alternativas
+
+- **deploy/render-privado-disco.yaml**: versión de pago (~7 USD/mes) con disco propio,
+  sin R2 ni Litestream, siempre despierta. Cópielo como `render.yaml` para usarla.
+- **deploy/render-demo.yaml**: versión gratuita de demostración (datos ficticios).

@@ -1,5 +1,22 @@
 # Historial de cambios
 
+## [1.2.0] — 2026-11-07
+
+### Añadido
+- **Almacenamiento en Cloudflare R2**: las evidencias e informes pueden guardarse en R2
+  (STORAGE=r2), con firma S3 (AWS Signature V4) validada contra el vector oficial de AWS.
+- **Despliegue permanente y gratuito**: Dockerfile con Litestream que respalda la base
+  SQLite a R2 de forma continua y la restaura al arrancar; blueprint de Render (render.yaml).
+- **Buscador por nombre, correo y usuario** con enlaces a redes sociales; resultados en la app.
+- Enlaces de consentimiento con nombre legible (slug) y pantalla simplificada.
+- Prueba automatizada del almacenamiento R2 (servidor S3 simulado): subida, descarga,
+  verificación de integridad y borrado. Total: 69 pruebas de API/unidad + 17 E2E.
+
+### Cambiado
+- Los puntos de lectura/escritura de archivos de evidencia e informes pasaron a asíncronos
+  para admitir almacenamiento remoto (R2) sin cambiar la base de datos (sigue en SQLite).
+
+
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y versionado semántico.
 
 ## [1.1.0] — 2026-11-03

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { now } from '../db/database.js';
 import { buildReportPdf } from '../lib/pdf.js';
+import { BUCKET } from '../lib/storage.js';
 import { encrypt, decrypt, sha256 } from '../lib/crypto.js';
 import { getSetting } from '../lib/settings.js';
 import { ensureCredits, chargeCredits } from '../lib/credits.js';
@@ -15,10 +16,8 @@ import { LIBPHONE_SOURCE } from '../lib/phone.js';
 export const DEFAULT_LIMITATIONS =
   'La información procede exclusivamente de fuentes públicas y de datos aportados con consentimiento. Los metadatos de numeración telefónica identifican país, tipo de línea y validez del rango, pero no la titularidad ni el operador actual debido a la portabilidad numérica. Los registros DNS, RDAP y de certificados reflejan el estado de la fuente en la fecha de consulta y pueden cambiar. Los resultados marcados como "No verificado" requieren corroboración independiente antes de utilizarse como fundamento de decisiones.';
 
-export default function reportRoutes({ db, config }) {
+export default function reportRoutes({ db, config, storage }) {
   const r = Router();
-  const dir = path.join(config.dataDir, 'informes');
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   function collect(caseId) {
     const c = db.get('SELECT * FROM cases WHERE id = ?', caseId);
@@ -87,7 +86,7 @@ export default function reportRoutes({ db, config }) {
     const pdf = await buildReportPdf(payload);
     const hash = sha256(pdf);
     const fileName = `${reportCode}.pdf.enc`;
-    fs.writeFileSync(path.join(dir, fileName), encrypt(config.masterKey, pdf), { mode: 0o600 });
+    await storage.put(BUCKET.REPORTS, fileName, encrypt(config.masterKey, pdf));
     const id = db.run('INSERT INTO reports (code, case_id, title, content, sha256, file_name, created_by, is_demo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       reportCode, d.caseId, d.title, JSON.stringify(content), hash, fileName, req.user.id, config.isDemo ? 1 : 0, now()).lastInsertRowid;
     chargeCredits(db, req.user, 'report_pdf', `report:${id}`, config.isDemo);
@@ -96,12 +95,12 @@ export default function reportRoutes({ db, config }) {
     res.status(201).json({ id, code: reportCode, sha256: hash, size: pdf.length });
   });
 
-  r.get('/:id/pdf', requirePerm('reports.read'), (req, res) => {
+  r.get('/:id/pdf', requirePerm('reports.read'), async (req, res) => {
     const rep = db.get('SELECT * FROM reports WHERE id = ?', Number(req.params.id));
     if (!rep) throw new HttpError(404, 'Informe no encontrado.');
-    const file = path.join(dir, rep.file_name);
-    if (!fs.existsSync(file)) throw new HttpError(410, 'El archivo del informe no está disponible.');
-    const pdf = decrypt(config.masterKey, fs.readFileSync(file));
+    const enc = await storage.get(BUCKET.REPORTS, rep.file_name);
+    if (!enc) throw new HttpError(410, 'El archivo del informe no está disponible.');
+    const pdf = decrypt(config.masterKey, enc);
     const ok = sha256(pdf) === rep.sha256;
     if (!ok) throw new HttpError(409, 'El archivo del informe no coincide con su hash registrado.');
     audit(db, req, 'report.downloaded', { entity: 'report', entityId: rep.id });
@@ -111,11 +110,11 @@ export default function reportRoutes({ db, config }) {
     res.send(pdf);
   });
 
-  r.delete('/:id', requirePerm('reports.write', 'cases.delete'), (req, res) => {
+  r.delete('/:id', requirePerm('reports.write', 'cases.delete'), async (req, res) => {
     const rep = db.get('SELECT * FROM reports WHERE id = ?', Number(req.params.id));
     if (!rep) throw new HttpError(404, 'Informe no encontrado.');
     db.run('DELETE FROM reports WHERE id = ?', rep.id);
-    try { fs.unlinkSync(path.join(dir, rep.file_name)); } catch { /* ignorado */ }
+    try { await storage.remove(BUCKET.REPORTS, rep.file_name); } catch { /* ignorado */ }
     db.run('INSERT INTO case_events (case_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', rep.case_id, 'informe', `${rep.code} eliminado`, req.user.id, now());
     audit(db, req, 'report.deleted', { entity: 'report', entityId: rep.id, detail: { code: rep.code }, severity: 'warning' });
     res.json({ ok: true });

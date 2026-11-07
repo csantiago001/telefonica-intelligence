@@ -1,0 +1,13 @@
+# Configuración de Litestream: respalda /data/ti.db a Cloudflare R2.
+# Las credenciales R2 llegan por variables de entorno (ver arrancar-nube.sh).
+dbs:
+  - path: /data/ti.db
+    replicas:
+      - type: s3
+        endpoint: ${R2_ENDPOINT}
+        bucket: ${R2_BUCKET}
+        path: litestream/ti.db
+        region: auto
+        access-key-id: ${R2_ACCESS_KEY_ID}
+        secret-access-key: ${R2_SECRET_ACCESS_KEY}
+        force-path-style: true

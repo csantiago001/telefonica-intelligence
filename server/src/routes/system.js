@@ -13,7 +13,7 @@ import { publicSearchConfig, saveSearchConfig, getSearchConfig, searchWeb } from
 
 const dirSize = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).reduce((n, f) => n + (fs.statSync(path.join(dir, f)).isFile() ? fs.statSync(path.join(dir, f)).size : 0), 0) : 0);
 
-export default function systemRoutes({ db, config, startedAt, version }) {
+export default function systemRoutes({ db, config, storage, startedAt, version }) {
   const r = Router();
 
   // ---------------- Dashboard ----------------
@@ -187,17 +187,18 @@ export default function systemRoutes({ db, config, startedAt, version }) {
   });
 
   // ---------------- Retención ----------------
-  r.get('/retention/preview', requirePerm('admin.backups'), (req, res) => res.json(runRetention(db, config, { dryRun: true })));
-  r.post('/retention/run', requirePerm('admin.backups'), (req, res) => {
-    const plan = runRetention(db, config);
+  r.get('/retention/preview', requirePerm('admin.backups'), async (req, res) => res.json(await runRetention(db, config, { dryRun: true })));
+  r.post('/retention/run', requirePerm('admin.backups'), async (req, res) => {
+    const plan = await runRetention(db, config, { storage });
     audit(db, req, 'retention.manual_run', { detail: plan, severity: 'warning' });
     res.json({ ok: true, deleted: plan });
   });
 
   // ---------------- Copias de seguridad ----------------
-  r.get('/backups', requirePerm('admin.backups'), (req, res) => res.json(listBackups(config)));
+  r.get('/backups', requirePerm('admin.backups'), (req, res) => res.json(config.storage === 'r2' ? [] : listBackups(config)));
   r.post('/backups', requirePerm('admin.backups'), (req, res) => {
     if (config.isDemo) throw new HttpError(400, 'Las copias de seguridad están deshabilitadas en el entorno de demostración.');
+    if (config.storage === 'r2') throw new HttpError(400, 'En el despliegue en la nube, los datos ya están respaldados en Cloudflare R2 (archivos) y por Litestream (base de datos). Descargue copias desde el panel de Cloudflare/Neon.');
     const b = createBackup(db, config, 'manual');
     audit(db, req, 'backup.created', { detail: { name: b.name, sha256: b.sha256 } });
     res.status(201).json({ name: b.name, size: b.size, sha256: b.sha256, files: b.files });

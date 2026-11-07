@@ -1,48 +1,43 @@
-# render.yaml — Despliegue PERMANENTE en Internet (acceso desde cualquier dispositivo).
-# Datos reales guardados en un disco persistente. Este es el archivo que Render usa
-# al elegir "New → Blueprint".
+# render.yaml — Despliegue PERMANENTE y GRATUITO en Internet.
 #
-# PASOS:
-#   1. Cree una cuenta en https://render.com (puede entrar con GitHub) y active la
-#      facturación (el disco persistente requiere un plan de pago).
-#   2. New → Blueprint → elija el repositorio telefonica-intelligence.
-#   3. Render pedirá MASTER_KEY (marcada como secreta): pegue la de su .env local, o
-#      genere una nueva de 64 caracteres hexadecimales y GUÁRDELA (sin ella no se
-#      descifran evidencias ni copias).
-#   4. Aplique. Obtendrá una URL https://...onrender.com. Póngala en PUBLIC_URL.
+# Arquitectura (sin tu PC, sin IP, permanente, sin costo):
+#   - La app corre en Render (plan gratuito).
+#   - La base de datos (SQLite) se respalda en tiempo real en tu Cloudflare R2 con
+#     Litestream y se restaura al arrancar: los datos NO se pierden al reiniciar.
+#   - Las evidencias e informes se guardan directamente en Cloudflare R2.
+#
+# PASOS (guía detallada en docs/DESPLIEGUE.md):
+#   1. En Cloudflare: cree un bucket R2 (p. ej. "telefonica") y un token de API R2
+#      con permisos de lectura/escritura. Anote: Account ID, Access Key ID, Secret.
+#   2. En Render: New → Blueprint → elija este repositorio.
+#   3. Render pedirá los valores marcados como secretos (abajo): péguelos.
+#      - MASTER_KEY: 64 caracteres hexadecimales (genérela y GUÁRDELA aparte).
+#      - R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY: de Cloudflare.
+#   4. Aplique. Obtendrá una URL https://...onrender.com; póngala en PUBLIC_URL.
 #   5. Abra esa URL desde cualquier dispositivo y cree su administrador.
 #
-# COSTO: plan "starter" + disco de 1 GB (consulte el precio vigente en render.com).
-# El plan gratuito NO sirve para datos reales: los borra en cada reinicio. Para la
-# versión gratuita de demostración use deploy/render-demo.yaml.
+# Nota: en el plan gratuito el servicio "duerme" tras ~15 min sin uso; la primera
+# visita después tarda ~30 s en despertar. Los datos siguen seguros en R2.
 services:
   - type: web
     name: telefonica-intelligence
-    runtime: node
-    plan: starter
+    runtime: docker
+    dockerfilePath: ./deploy/Dockerfile.nube
+    dockerContext: .
+    plan: free
     region: oregon
     branch: main
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
     healthCheckPath: /api/health
-    disk:
-      name: ti-datos
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
     envVars:
-      - key: NODE_VERSION
-        value: "22.23.4"
-      - key: APP_MODE
-        value: private
-      - key: HOST
-        value: 0.0.0.0
-      - key: TRUST_PROXY
-        value: "true"
-      - key: COOKIE_SECURE
-        value: "true"
-      - key: DATA_DIR
-        value: /opt/render/project/src/data
       - key: MASTER_KEY
         sync: false
       - key: PUBLIC_URL
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
         sync: false

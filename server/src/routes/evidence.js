@@ -7,6 +7,7 @@ import multer from 'multer';
 import exifr from 'exifr';
 import { now } from '../db/database.js';
 import { encrypt, decrypt, sha256, secureDelete } from '../lib/crypto.js';
+import { BUCKET } from '../lib/storage.js';
 import { HttpError, parse, audit, pageSchema, paginate, jsonParse, nextCode, toCsv } from '../lib/util.js';
 import { requirePerm } from '../middleware/auth.js';
 
@@ -37,7 +38,7 @@ async function extractMetadata(buf, mime, name) {
   return meta;
 }
 
-export default function evidenceRoutes({ db, config }) {
+export default function evidenceRoutes({ db, config, storage }) {
   const r = Router();
   const tmpDir = path.join(config.dataDir, 'tmp');
   const upload = multer({
@@ -51,10 +52,10 @@ export default function evidenceRoutes({ db, config }) {
     if (!e) throw new HttpError(404, 'Evidencia no encontrada.');
     return e;
   };
-  const readPlain = (e) => {
-    const file = path.join(config.evidenceDir, e.storage_name);
-    if (!fs.existsSync(file)) throw new HttpError(410, 'El archivo de la evidencia no se encuentra en el almacenamiento.');
-    try { return decrypt(config.masterKey, fs.readFileSync(file)); } catch { throw new HttpError(500, 'No se pudo descifrar la evidencia: el archivo fue alterado o la clave maestra es distinta.'); }
+  const readPlain = async (e) => {
+    const enc = await storage.get(BUCKET.EVIDENCE, e.storage_name);
+    if (!enc) throw new HttpError(410, 'El archivo de la evidencia no se encuentra en el almacenamiento.');
+    try { return decrypt(config.masterKey, enc); } catch { throw new HttpError(500, 'No se pudo descifrar la evidencia: el archivo fue alterado o la clave maestra es distinta.'); }
   };
 
   r.get('/meta', (req, res) => res.json({ origins: ORIGINS, maxUploadMb: config.maxUploadMb }));
@@ -116,8 +117,8 @@ export default function evidenceRoutes({ db, config }) {
     const originalName = path.basename(Buffer.from(req.file.originalname, 'latin1').toString('utf8')).replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').slice(0, 200) || 'archivo';
     const meta = await extractMetadata(plain, req.file.mimetype, originalName);
     if (d.sourceDetail) meta.sourceDetail = d.sourceDetail;
-    const storage = crypto.randomUUID() + '.enc';
-    fs.writeFileSync(path.join(config.evidenceDir, storage), encrypt(config.masterKey, plain), { mode: 0o600 });
+    const storageName = crypto.randomUUID() + '.enc';
+    await storage.put(BUCKET.EVIDENCE, storageName, encrypt(config.masterKey, plain));
     secureDelete(req.file.path);
     const acquired = d.acquiredAt && !Number.isNaN(Date.parse(d.acquiredAt)) ? new Date(d.acquiredAt).toISOString() : null;
     const created = db.tx(() => {
@@ -125,7 +126,7 @@ export default function evidenceRoutes({ db, config }) {
       const id = db.run(
         `INSERT INTO evidence (code, case_id, title, description, origin, original_name, mime_type, size_bytes, sha256, storage_name, metadata, acquired_at, uploaded_by, last_verified_at, last_verified_ok, is_demo, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        code, d.caseId ?? null, d.title, d.description || null, d.origin, originalName, req.file.mimetype || null, plain.length, hash, storage, JSON.stringify(meta), acquired, req.user.id, now(), config.isDemo ? 1 : 0, now()
+        code, d.caseId ?? null, d.title, d.description || null, d.origin, originalName, req.file.mimetype || null, plain.length, hash, storageName, JSON.stringify(meta), acquired, req.user.id, now(), config.isDemo ? 1 : 0, now()
       ).lastInsertRowid;
       custody(id, 'incorporacion', `Archivo ${originalName} (${plain.length} bytes). SHA-256 ${hash}. Origen: ${d.origin}${d.sourceDetail ? ' — ' + d.sourceDetail : ''}`, req);
       if (d.caseId) {
@@ -166,14 +167,14 @@ export default function evidenceRoutes({ db, config }) {
     res.json({ ok: true });
   });
 
-  r.post('/:id/verify', requirePerm('evidence.read'), (req, res) => {
+  r.post('/:id/verify', requirePerm('evidence.read'), async (req, res) => {
     const e = getEv(req.params.id);
     if (e.deleted_at) throw new HttpError(400, 'La evidencia fue eliminada.');
     let current = null;
     let ok = false;
     let error = null;
     try {
-      current = sha256(readPlain(e));
+      current = sha256(await readPlain(e));
       ok = current === e.sha256;
     } catch (err) {
       error = err.message;
@@ -185,10 +186,10 @@ export default function evidenceRoutes({ db, config }) {
     res.json({ ok, expected: e.sha256, current, error, verifiedAt: now() });
   });
 
-  r.get('/:id/download', requirePerm('evidence.download'), (req, res) => {
+  r.get('/:id/download', requirePerm('evidence.download'), async (req, res) => {
     const e = getEv(req.params.id);
     if (e.deleted_at) throw new HttpError(410, 'La evidencia fue eliminada.');
-    const plain = readPlain(e);
+    const plain = await readPlain(e);
     const hash = sha256(plain);
     if (hash !== e.sha256) {
       custody(e.id, 'descarga_bloqueada', 'El hash no coincide con el registrado', req);
@@ -202,11 +203,11 @@ export default function evidenceRoutes({ db, config }) {
     res.send(plain);
   });
 
-  r.delete('/:id', requirePerm('evidence.delete'), (req, res) => {
+  r.delete('/:id', requirePerm('evidence.delete'), async (req, res) => {
     const e = getEv(req.params.id);
     if (e.deleted_at) throw new HttpError(400, 'Ya fue eliminada.');
     const d = parse(z.object({ reason: z.string().trim().min(5, 'Indique el motivo de la eliminación').max(1000) }), req.body);
-    const wiped = secureDelete(path.join(config.evidenceDir, e.storage_name));
+    const wiped = await storage.remove(BUCKET.EVIDENCE, e.storage_name);
     db.run('UPDATE evidence SET deleted_at = ? WHERE id = ?', now(), e.id);
     custody(e.id, 'eliminacion', `Motivo: ${d.reason}. Borrado seguro: ${wiped ? 'sí' : 'archivo inexistente'}. Se conserva el registro y el hash para trazabilidad.`, req);
     if (e.case_id) db.run('INSERT INTO case_events (case_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', e.case_id, 'evidencia_eliminada', `${e.code}: ${d.reason}`, req.user.id, now());
