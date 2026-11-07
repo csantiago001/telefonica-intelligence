@@ -1,25 +1,48 @@
-# Blueprint de Render.com para el ENTORNO DE DEMOSTRACIÓN (solo datos ficticios, plan gratuito).
-# No contiene secretos. Los datos se regeneran en cada arranque.
+# render.yaml — Despliegue PERMANENTE en Internet (acceso desde cualquier dispositivo).
+# Datos reales guardados en un disco persistente. Este es el archivo que Render usa
+# al elegir "New → Blueprint".
+#
+# PASOS:
+#   1. Cree una cuenta en https://render.com (puede entrar con GitHub) y active la
+#      facturación (el disco persistente requiere un plan de pago).
+#   2. New → Blueprint → elija el repositorio telefonica-intelligence.
+#   3. Render pedirá MASTER_KEY (marcada como secreta): pegue la de su .env local, o
+#      genere una nueva de 64 caracteres hexadecimales y GUÁRDELA (sin ella no se
+#      descifran evidencias ni copias).
+#   4. Aplique. Obtendrá una URL https://...onrender.com. Póngala en PUBLIC_URL.
+#   5. Abra esa URL desde cualquier dispositivo y cree su administrador.
+#
+# COSTO: plan "starter" + disco de 1 GB (consulte el precio vigente en render.com).
+# El plan gratuito NO sirve para datos reales: los borra en cada reinicio. Para la
+# versión gratuita de demostración use deploy/render-demo.yaml.
 services:
   - type: web
-    name: telefonica-intelligence-demo
+    name: telefonica-intelligence
     runtime: node
-    plan: free
+    plan: starter
     region: oregon
     branch: main
     buildCommand: npm ci && npm run build
-    startCommand: npm run start:demo
+    startCommand: npm start
     healthCheckPath: /api/health
+    disk:
+      name: ti-datos
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "22.23.4"
       - key: APP_MODE
-        value: demo
+        value: private
       - key: HOST
         value: 0.0.0.0
       - key: TRUST_PROXY
         value: "true"
       - key: COOKIE_SECURE
         value: "true"
-      - key: MAX_UPLOAD_MB
-        value: "1"
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
+      - key: MASTER_KEY
+        sync: false
+      - key: PUBLIC_URL
+        sync: false

@@ -1,0 +1,26 @@
+# Blueprint de Render.com — ENTORNO DE DEMOSTRACIÓN (datos ficticios, plan gratuito).
+# Para uso real con datos permanentes use el render.yaml de la raíz (plan de pago).
+# No contiene secretos. Los datos se regeneran en cada arranque.
+services:
+  - type: web
+    name: telefonica-intelligence-demo
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:demo
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.23.4"
+      - key: APP_MODE
+        value: demo
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: MAX_UPLOAD_MB
+        value: "1"
